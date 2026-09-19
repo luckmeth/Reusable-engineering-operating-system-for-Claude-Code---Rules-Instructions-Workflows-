@@ -1,0 +1,29 @@
+{
+  "name": "claude-code-engineering-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Reusable engineering operating system for Claude Code — rules, instructions, workflows, security baseline and token-efficiency practices.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/luckmeth/Reusable-engineering-operating-system-for-Claude-Code---Rules-Instructions-Workflows-.git"
+  },
+  "keywords": [
+    "claude-code",
+    "engineering-standards",
+    "ai-agent-rules",
+    "security-baseline",
+    "supabase",
+    "rls",
+    "nextjs",
+    "token-efficiency"
+  ],
+  "scripts": {
+    "install:system": "bash scripts/install.sh",
+    "verify": "bash scripts/verify.sh",
+    "lint:md": "npx --yes markdownlint-cli2 \"**/*.md\" \"#node_modules\""
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

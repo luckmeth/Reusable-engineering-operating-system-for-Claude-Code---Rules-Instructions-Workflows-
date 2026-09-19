@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify system integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell script syntax
+        run: |
+          for f in scripts/*.sh; do bash -n "$f" || exit 1; done
+          echo "shell scripts parse"
+
+      - name: Required files present
+        run: |
+          missing=0
+          required="
+            CLAUDE.md
+            .claude/settings.json
+            .env.example
+            .gitignore
+            LICENSE
+            docs/USAGE.md
+          "
+          for f in $required; do
+            [ -f "$f" ] || { echo "::error::missing $f"; missing=1; }
+          done
+          for n in 00-core 01-architecture 02-security 03-database 04-frontend \
+                   05-backend 06-testing 07-git 08-deployment 09-email \
+                   10-performance 11-token-efficiency; do
+            [ -f ".claude/rules/$n.md" ] || { echo "::error::missing rule $n"; missing=1; }
+          done
+          for c in audit security-audit test deploy-check review plan handoff init-project; do
+            [ -f ".claude/commands/$c.md" ] || { echo "::error::missing command $c"; missing=1; }
+          done
+          exit $missing
+
+      - name: settings.json is valid JSON
+        run: python3 -c "import json;json.load(open('.claude/settings.json'))"
+
+      - name: Command frontmatter present
+        run: |
+          fail=0
+          for f in .claude/commands/*.md .claude/agents/*.md; do
+            head -1 "$f" | grep -q '^---$' || { echo "::error::$f missing frontmatter"; fail=1; }
+            grep -q '^description:' "$f" || { echo "::error::$f missing description"; fail=1; }
+          done
+          exit $fail
+
+      - name: No secrets committed
+        run: |
+          if git ls-files | grep -qxE '\.env|\.env\..*' && ! git ls-files | grep -qx '.env.example'; then
+            echo "::error::a .env file is tracked"; exit 1
+          fi
+          # .env.example must hold names only
+          if grep -qE '=[A-Za-z0-9+/_-]{20,}' .env.example; then
+            echo "::error::.env.example contains values"; exit 1
+          fi
+          # No long credential-shaped literals anywhere
+          if grep -rInE '(api[_-]?key|secret|token|password)[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9+/_-]{24,}' \
+               --exclude-dir=.git --exclude-dir=node_modules . ; then
+            echo "::error::possible hardcoded credential"; exit 1
+          fi
+          echo "no secrets found"
+
+      - name: Every migration table enables RLS
+        run: |
+          fail=0
+          tables=$(grep -rhoiE 'create table (if not exists )?(public\.)?[a-z_]+' supabase/migrations \
+                   | sed -E 's/.*[. ]([a-z_]+)$/\1/' | sort -u)
+          for t in $tables; do
+            grep -rqiE "alter[[:space:]]+table[[:space:]]+(public\.)?$t[[:space:]]+enable[[:space:]]+row[[:space:]]+level[[:space:]]+security" supabase/migrations || {
+              echo "::error::table '$t' created without RLS"; fail=1; }
+          done
+          exit $fail
+
+      - name: Run verification script
+        run: bash scripts/verify.sh .
+
+  install-smoke-test:
+    name: Installer smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install into a scratch project
+        run: |
+          mkdir -p /tmp/scratch && printf '.env\n' > /tmp/scratch/.gitignore
+          bash scripts/install.sh /tmp/scratch --with-supabase --with-tests
+
+      - name: Installed files are present
+        run: |
+          for f in CLAUDE.md .claude/settings.json .claude/rules/02-security.md \
+                   .claude/commands/audit.md .claude/agents/security-reviewer.md \
+                   docs/PROJECT_STATE.md .env.example; do
+            [ -f "/tmp/scratch/$f" ] || { echo "::error::installer did not write $f"; exit 1; }
+          done
+          echo "installer wrote all expected files"
+
+      - name: Re-running does not clobber without --force
+        run: |
+          echo "CUSTOMIZED" > /tmp/scratch/CLAUDE.md
+          bash scripts/install.sh /tmp/scratch
+          grep -qx CUSTOMIZED /tmp/scratch/CLAUDE.md || {
+            echo "::error::installer overwrote an existing file without --force"; exit 1; }
+          echo "existing files preserved"

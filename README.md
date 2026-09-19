@@ -1,601 +1,259 @@
-# Reusable-engineering-operating-system-for-Claude-Code---Rules-Instructions-Workflows-
-A reusable Claude Code engineering framework for building secure, scalable, production-ready software with efficient workflows, architecture standards, security practices, testing, deployment, and token optimization.
+# Claude Code Engineering System
+
+A reusable engineering operating system for Claude Code — rules, instructions,
+workflows, a security baseline, and token-efficiency practices for building
+secure, scalable, production-ready software.
+
+Treats Claude Code as an **AI engineering agent operating under defined software
+engineering standards**, not as a code generator.
+
+```
+CORRECTNESS > SECURITY > MAINTAINABILITY > PERFORMANCE > COST > SPEED
+```
 
-Claude Code Engineering System
+The objective is not to generate the most code. It is to generate the smallest
+amount of correct, secure, maintainable code that solves the actual problem.
 
-A reusable engineering framework for Claude Code designed to make software development more efficient, secure, consistent, and production-ready.
+---
+
+## Quick Start
+
+**Install into an existing project:**
+
+```bash
+git clone https://github.com/luckmeth/Reusable-engineering-operating-system-for-Claude-Code---Rules-Instructions-Workflows-.git claude-os
+bash claude-os/scripts/install.sh /path/to/your/project
+
+cd /path/to/your/project && claude
+> /audit          # full engineering audit of what you already have
+```
+
+Existing files are never overwritten unless you pass `--force`.
+Add `--with-supabase` for the reference RLS migrations, `--with-tests` for the
+security test patterns.
+
+**Start a new project:**
+
+```bash
+git clone <this repo> my-project && cd my-project
+rm -rf .git && git init && claude
+> /init-project A multi-tenant invoicing app for small businesses
+```
+
+**Check a repo before committing:**
+
+```bash
+bash scripts/verify.sh /path/to/project
+```
+
+---
+
+## What's In Here
+
+| Path | What it does |
+|---|---|
+| `CLAUDE.md` | The constitution — always in context. Priority order, hard rules, honesty states, task protocol. |
+| `.claude/rules/` | 12 rule files, loaded per task instead of all at once |
+| `.claude/commands/` | 8 slash commands for the daily workflow |
+| `.claude/agents/` | `security-reviewer`, `db-reviewer` — focused review in isolated context |
+| `.claude/settings.json` | Permission defaults: read-only ops allowed, destructive ops denied, `.env` unreadable |
+| `docs/` | Templates for architecture, database, security, API, deployment, ADRs, project state, tasks |
+| `supabase/` | Working reference migrations: tenancy, `security definer` policy helpers, four RLS policies per table, webhook idempotency |
+| `tests/security/` | Access control, RLS, webhook forgery/replay, and input validation test patterns |
+| `scripts/install.sh` | Installs the system into any project |
+| `scripts/verify.sh` | Grep-level checks: secrets, RLS coverage, client-trusted tenant IDs, swallowed errors |
+| `.github/workflows/ci.yml` | Validates system integrity and smoke-tests the installer |
+
+### Rules
+
+Split by concern so a task loads one or two files, not twelve.
+
+| File | Covers |
+|---|---|
+| `00-core.md` | Inspect-before-modify, minimal change, TypeScript standards, honesty states, escalation |
+| `01-architecture.md` | Project init order, structure, client/server boundary, layering, tenancy, ADRs |
+| `02-security.md` | Authn vs authz, IDOR, validation, OWASP, secrets, webhooks, payments, uploads, no security theater |
+| `03-database.md` | Constraints, query-driven indexes, RLS policy patterns, service role, migrations |
+| `04-frontend.md` | Components, server/client split, the five async states, state escalation, accessibility |
+| `05-backend.md` | Endpoint contracts, output shaping, error classes, logging, serverless reality, idempotency |
+| `06-testing.md` | Behaviour over implementation, mandatory security tests, test quality |
+| `07-git.md` | Branching, commit format, destructive-command policy, merge gate |
+| `08-deployment.md` | Vercel serverless limits, Cloudflare caching traps, env validation, readiness, cost |
+| `09-email.md` | Resend server-side, retries and idempotency, development email safety |
+| `10-performance.md` | Measure first, the eight real bottlenecks, caching rules |
+| `11-token-efficiency.md` | The six questions, the discovery ladder, session handoff |
+
+### Commands
+
+| Command | Purpose |
+|---|---|
+| `/plan <requirement>` | Impact analysis + implementation plan. Writes no code. |
+| `/review` | Reviews the current diff — correctness, security, performance, maintainability |
+| `/test` | typecheck → lint → test → build, reported as VERIFIED / NOT TESTED |
+| `/audit` | Full repository audit against every rule |
+| `/security-audit` | Adversarial review: IDOR, tenancy, RLS, webhooks, secrets |
+| `/deploy-check` | Production readiness gate |
+| `/handoff` | Regenerates `docs/PROJECT_STATE.md` for the next session |
+| `/init-project` | Scaffolds a new project under this system |
+
+---
+
+## Why This Exists
+
+AI coding agents write code quickly, but speed alone does not produce
+production-quality software. Without a system, an agent will overengineer simple
+features, add unnecessary dependencies, rewrite working code, miss authorization
+bugs, ignore database security, duplicate existing functionality, waste tokens
+rediscovering the same context, and forget project decisions between sessions.
+
+This repository prevents those specific failures.
+
+---
+
+## The Workflow
+
+```
+Requirement
+   ↓
+Inspect  ──────────  relevant files only
+   ↓
+Impact Analysis ───  security / database / API / deploy / test / cost
+   ↓
+Plan  ─────────────  small and targeted
+   ↓
+Implement ─────────  minimal change
+   ↓
+Validate ──────────  typecheck / lint / tests / build
+   ↓
+Review Diff ───────  security and quality, adversarially
+   ↓
+Update Project State
+   ↓
+DONE
+```
+
+---
+
+## Security Baseline
+
+Security is part of architecture, not a phase after development.
+
+The system enforces the controls that actually matter in this stack:
+
+- Identity from the server session — never from a request body
+- Ownership and tenant filters **in the query**, not applied after the fetch
+- `404` not `403` for out-of-scope resources — `403` confirms existence
+- RLS enabled *and forced*, with a separate policy per operation, and `with check`
+  on every `UPDATE` (without it, a user can move their row into your tenant)
+- Two independent isolation layers: the server filter catches logic errors, RLS
+  catches the filter someone forgot
+- Webhook signatures verified over the **raw** body, with replay windows and
+  unique-constraint idempotency
+- Amounts and prices sourced from the database, never the payload
+
+### It also rejects security theater
+
+TypeScript, HTTPS, Supabase Auth, Cloudflare, hashed passwords, frontend
+validation, and undocumented endpoints are **not** access controls. Security is
+demonstrated by an enforced control plus a test that fails when the control is
+removed.
 
-This repository provides a structured set of engineering rules, workflows, architecture standards, security practices, testing strategies, deployment guidelines, and AI-agent instructions that can be reused across software projects.
+---
 
-The goal is simple:
+## Token Efficiency
 
-Get maximum engineering output from Claude Code while minimizing unnecessary token usage, complexity, and repeated context discovery.
+Every token should have a purpose. Before acting, the system asks:
 
-⸻
+| Before you... | Ask |
+|---|---|
+| read a file | "Do I need this information?" |
+| write code | "Does this change actually need to exist?" |
+| add a dependency | "Can the existing stack solve this?" |
+| refactor | "Does this reduce real complexity or just move it?" |
+| run a command | "What information will this provide?" |
+| retry a failure | "What changed since the previous attempt?" |
 
-Why This Exists
+```
+Documentation → less rediscovery → less context → fewer tokens → faster development
+```
 
-AI coding agents can write code extremely quickly, but speed alone does not produce production-quality software.
+This principle is applied to the system itself: `CLAUDE.md` stays short and
+always loaded, and routes to the one rule file a task actually needs. Loading
+all twelve every session would cost tokens on every turn and bury the relevant
+rule in noise.
 
-Without a consistent engineering system, an AI agent can:
+---
 
-* Overengineer simple features
-* Introduce unnecessary dependencies
-* Rewrite working code
-* Miss authorization vulnerabilities
-* Ignore database security
-* Duplicate existing functionality
-* Waste tokens reading irrelevant files
-* Repeat previously solved problems
-* Make assumptions about architecture
-* Produce code without sufficient testing
-* Create deployment problems
-* Forget important project decisions between sessions
+## Never Pretend
 
-This repository provides a reusable system for preventing those problems.
+Every claim about the system carries a state:
 
-Instead of treating Claude Code as a simple code generator, this framework treats it as an AI engineering agent operating under defined software engineering standards.
+```
+VERIFIED    — executed and observed
+ASSUMED     — reasonable inference, not checked
+NOT TESTED  — written but never run
+BLOCKED     — cannot proceed; reason stated
+```
 
-⸻
+Never claim tests passed, a deploy succeeded, a migration ran, or security is
+complete without having verified it. A wrong "tests pass" costs more than an
+honest "not tested".
 
-Core Philosophy
-
-The system follows this priority:
+---
 
-CORRECTNESS
-     ↓
-SECURITY
-     ↓
-MAINTAINABILITY
-     ↓
-PERFORMANCE
-     ↓
-COST
-     ↓
-SPEED
+## Default Stack
 
-The objective is not to generate the most code.
-
-The objective is to generate the smallest amount of correct, secure, maintainable code necessary to solve the actual problem.
-
-⸻
-
-Technology Ecosystem
-
-The framework is designed around a modern web application stack.
-
-Area	Preferred Technology
-Language	TypeScript
-Frontend	React / Next.js
-Styling	Tailwind CSS
-Backend	Next.js / Node.js
-Database	Supabase PostgreSQL
-Authentication	Supabase Auth
-Authorization	PostgreSQL RLS + server-side authorization
-Hosting	Vercel
-DNS / CDN / Security	Cloudflare
-Transactional Email	Resend
-Payment Integration	PayHere / appropriate provider
-Source Control	Git + GitHub
-AI Development	Claude Code
-Validation	Zod / equivalent
-Testing	Unit / Integration / E2E
-Documentation	Markdown + ADRs
-
-This is a default ecosystem, not a hard requirement.
-
-A different technology should be selected when the project requirements justify it.
-
-⸻
-
-What’s Included
-
-The engineering system covers:
-
-Architecture
-
-* Project initialization
-* Application architecture
-* Frontend architecture
-* Backend architecture
-* Database architecture
-* Multi-tenant architecture
-* Architecture decision records
-* Repository organization
-
-Security
-
-* OWASP-oriented security reviews
-* Authentication
-* Authorization
-* Supabase Row Level Security
-* IDOR prevention
-* Input validation
-* File upload security
-* Secret management
-* API security
-* Webhook security
-* Tenant isolation
-* Security-focused code review
-
-Database
-
-* PostgreSQL design
-* Supabase conventions
-* Database constraints
-* Indexing
-* Query efficiency
-* Migrations
-* RLS policies
-* Multi-tenant data isolation
-
-Development
-
-* TypeScript standards
-* React/Next.js conventions
-* API design
-* Error handling
-* Logging
-* Git workflow
-* Testing
-* Performance
-* Accessibility
-
-Infrastructure
-
-* Vercel deployment
-* Cloudflare configuration
-* Resend email
-* Environment variables
-* Production readiness
-* Cost considerations
-* Monitoring and observability
-
-AI Development
-
-* Claude Code workflow
-* Context management
-* Token optimization
-* Repository discovery
-* Task planning
-* Minimal-change implementation
-* AI session handoff
-* Project state management
-
-⸻
-
-Claude Code Workflow
-
-The core development workflow is:
-
-┌─────────────────────┐
-│      Requirement    │
-└──────────┬──────────┘
-           ↓
-┌─────────────────────┐
-│       Inspect       │
-│ Relevant files only │
-└──────────┬──────────┘
-           ↓
-┌─────────────────────┐
-│   Impact Analysis   │
-│ Security / DB / API │
-│ Deploy / Testing    │
-└──────────┬──────────┘
-           ↓
-┌─────────────────────┐
-│        Plan         │
-│ Small + targeted    │
-└──────────┬──────────┘
-           ↓
-┌─────────────────────┐
-│     Implement       │
-│ Minimal change      │
-└──────────┬──────────┘
-           ↓
-┌─────────────────────┐
-│       Validate      │
-│ Tests / Type / Lint │
-└──────────┬──────────┘
-           ↓
-┌─────────────────────┐
-│    Review Diff      │
-│ Security / Quality  │
-└──────────┬──────────┘
-           ↓
-┌─────────────────────┐
-│ Update Project State│
-└──────────┬──────────┘
-           ↓
-         DONE
-
-⸻
-
-Token Efficiency
-
-One of the main goals of this repository is reducing unnecessary Claude Code token consumption.
-
-Claude should not repeatedly:
-
-* Read the entire repository
-* Read large files unnecessarily
-* Re-explain the architecture
-* Rediscover previous decisions
-* Rewrite unrelated code
-* Generate speculative implementations
-* Run identical commands repeatedly
-* Dump huge logs into context
-* Create unnecessary abstractions
-
-Instead, Claude should use:
-
-* Targeted file searches
-* Targeted reads
-* Existing documentation
-* Git diffs
-* Project state
-* Focused tests
-* Small implementation steps
-
-The principle
-
-Every token should have a purpose.
-
-Before reading:
-
-Do I need this information?
-
-Before writing:
-
-Does this change actually need to exist?
-
-Before adding a dependency:
-
-Can the existing stack solve this?
-
-Before refactoring:
-
-Does this reduce real complexity?
-
-Before running a command:
-
-What information will this provide?
-
-Before repeating a failed attempt:
-
-What changed since the previous attempt?
-
-⸻
-
-Recommended Repository Structure
-
-A project using this system can follow:
-
-.
-├── CLAUDE.md
-│
-├── .claude/
-│   ├── rules/
-│   │   ├── 00-core.md
-│   │   ├── 01-architecture.md
-│   │   ├── 02-security.md
-│   │   ├── 03-database.md
-│   │   ├── 04-frontend.md
-│   │   ├── 05-backend.md
-│   │   ├── 06-testing.md
-│   │   ├── 07-git.md
-│   │   ├── 08-deployment.md
-│   │   ├── 09-email.md
-│   │   ├── 10-performance.md
-│   │   └── 11-token-efficiency.md
-│   │
-│   └── commands/
-│       ├── audit.md
-│       ├── security-audit.md
-│       ├── test.md
-│       ├── deploy-check.md
-│       └── review.md
-│
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── DATABASE.md
-│   ├── SECURITY.md
-│   ├── API.md
-│   ├── DEPLOYMENT.md
-│   ├── DECISIONS.md
-│   ├── PROJECT_STATE.md
-│   └── TASKS.md
-│
-├── supabase/
-│   ├── migrations/
-│   ├── seed.sql
-│   └── config.toml
-│
-├── tests/
-├── .env.example
-├── .gitignore
-└── package.json
-
-Not every project needs every file. The structure should scale with project complexity.
-
-⸻
-
-Project State Management
-
-A major part of the framework is maintaining a concise project state.
-
-Example:
-
-Current architecture:
-Next.js + Supabase + Vercel + Cloudflare + Resend
-Current feature:
-Subscription management
-Completed:
-- Authentication
-- Database schema
-- RLS policies
-In progress:
-- Payment webhook verification
-Known issues:
-- Email retry handling
-Next:
-- Integration tests
-
-This allows a future Claude Code session to understand the current state without reconstructing the entire development history.
-
-⸻
-
-Security Philosophy
-
-Security should be part of architecture rather than something added after development.
-
-Every security-sensitive feature should consider:
-
-* Authentication bypass
-* Authorization bypass
-* IDOR
-* Cross-user access
-* Cross-tenant access
-* Input injection
-* XSS
-* SQL injection
-* SSRF
-* Path traversal
-* Malicious file uploads
-* Rate-limit abuse
-* Credential attacks
-* Secret leakage
-* Forged webhooks
-* Database policy bypass
-
-The system also explicitly rejects security theater.
-
-For example:
-
-Using TypeScript does not make an application secure.
-
-Using Supabase Auth does not automatically implement authorization.
-
-Using Cloudflare does not automatically secure an application.
-
-Frontend validation is not a security boundary.
-
-Security must be implemented through actual controls and verified through testing and review.
-
-⸻
-
-Production Readiness
-
-Before a feature is considered complete, the system checks:
-
-Functionality
-
-* Requirements implemented
-* Edge cases handled
-* Error states handled
-
-Security
-
-* Authentication checked
-* Authorization checked
-* Input validated
-* Secrets protected
-* RLS reviewed
-* Sensitive data protected
-
-Database
-
-* Schema reviewed
-* Constraints reviewed
-* Indexes reviewed
-* Queries reviewed
-* Migration reviewed
-
-Testing
-
-* Unit tests where required
-* Integration tests where required
-* E2E tests where required
-* Security tests where appropriate
-
-Deployment
-
-* Environment variables configured
-* Build succeeds
-* Vercel configuration reviewed
-* Cloudflare configuration reviewed
-* Production behavior verified
-
-⸻
-
-Git Philosophy
-
-Git is part of the engineering workflow.
-
-Prefer:
-
-main
-├── feature/*
-├── fix/*
-├── security/*
-└── refactor/*
-
-Keep changes focused.
-
-Use small logical commits.
-
-Never casually:
-
-* Reset user changes
-* Force push
-* Delete branches
-* Destroy migrations
-* Discard unrelated work
-
-Before significant changes:
-
-git status
-git diff
-
-Understand the current repository state before modifying it.
-
-⸻
-
-Documentation Philosophy
-
-Documentation exists to reduce future engineering and AI context costs.
-
-Good documentation explains:
-
-* Why the architecture exists
-* Important constraints
-* Security assumptions
-* External services
-* Deployment requirements
-* Database relationships
-* Important decisions
-* Known limitations
-
-Bad documentation simply repeats the code.
+| Area | Default |
+|---|---|
+| Language | TypeScript (strict) |
+| Frontend | React / Next.js |
+| Styling | Tailwind CSS |
+| Backend | Next.js / Node.js |
+| Database | Supabase PostgreSQL |
+| Auth | Supabase Auth |
+| Authorization | Server-side checks + PostgreSQL RLS |
+| Hosting | Vercel |
+| DNS / CDN / Edge | Cloudflare |
+| Email | Resend |
+| Payments | PayHere or equivalent |
+| Validation | Zod |
+| AI development | Claude Code |
 
-The objective is:
+A preference, not a restriction. Swap any layer when requirements justify it —
+`00-core`, `02-security`, `06-testing`, `07-git`, `10-performance` and
+`11-token-efficiency` are stack-independent.
 
-Documentation
-      ↓
-Less Rediscovery
-      ↓
-Less Context
-      ↓
-Fewer Tokens
-      ↓
-Faster Development
+---
 
-⸻
+## Customizing
 
-When Claude Should Ask
+1. Edit `CLAUDE.md` — replace the default stack with your project's real stack.
+2. Fill `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/DATABASE.md` with real
+   content. A scaffold full of `TODO` costs more than no scaffold.
+3. **Delete rule files that do not apply.** Unused rules cost tokens every session.
+4. Keep `docs/PROJECT_STATE.md` under ~50 lines — it is read at the start of
+   every session.
 
-Claude should ask the developer when:
+See `docs/USAGE.md` for the full guide.
 
-* Requirements conflict
-* Destructive changes are required
-* Data migration could cause loss
-* Architecture must fundamentally change
-* Production secrets are required
-* Business rules are ambiguous
-* Multiple materially different architectures are possible
+---
 
-Claude should not ask unnecessary questions about low-risk implementation details.
+## What This System Will Not Do
 
-When a safe engineering decision can be made, make it and continue.
+It will not make an insecure design secure, replace a threat model, or substitute
+for running the tests. It enforces discipline and preserves context across
+sessions — the engineering judgment is still yours.
 
-⸻
+---
 
-When Claude Should NOT Pretend
+## Status
 
-Claude must never claim:
+An evolving framework. Update the rules when better practices emerge, security
+requirements change, the stack changes, Claude Code's capabilities change, or
+production experience reveals a weakness.
 
-* Tests passed when they were not run
-* Deployment succeeded when it was not verified
-* Security is complete when it was not reviewed
-* A migration succeeded when it was not confirmed
-* An API works when it was not tested
-* An external service is configured when it was not verified
+Evolve it from real engineering results, not by accumulating rules.
 
-Use explicit states:
+## License
 
-VERIFIED
-ASSUMED
-NOT TESTED
-BLOCKED
-
-⸻
-
-Intended Use
-
-This repository can be used as:
-
-* A template for new projects
-* A Claude Code instruction system
-* A software engineering standards repository
-* A security baseline
-* A team development guideline
-* An AI-agent workflow
-* A project bootstrap framework
-* A reusable architecture reference
-
-⸻
-
-Recommended Usage
-
-For a new project:
-
-1. Copy the core Claude Code rules.
-2. Create the .claude/ structure.
-3. Create the docs/ structure.
-4. Customize the technology stack.
-5. Define project architecture.
-6. Define database structure.
-7. Define authentication and authorization.
-8. Define deployment configuration.
-9. Start development using the task execution workflow.
-10. Keep PROJECT_STATE.md and TASKS.md updated.
-
-⸻
-
-Design Principle
-
-The central idea behind this system is:
-
-AI should not replace engineering discipline. It should amplify it.
-
-Claude Code can dramatically increase development speed, but only when the repository provides clear boundaries, architecture, security requirements, testing expectations, and project context.
-
-This framework is designed to provide those boundaries while keeping the AI development workflow efficient.
-
-⸻
-
-License
-
-Add the license appropriate for your intended use.
-
-For example:
-
-* MIT for a permissive open-source framework
-* Apache-2.0 for a permissive license with additional protections
-* Private/proprietary if this is intended for internal use only
-
-⸻
-
-Status
-
-This is an evolving engineering framework.
-
-Rules should be updated when:
-
-* Better engineering practices are identified
-* Security requirements change
-* Technology choices change
-* Claude Code capabilities change
-* Production experience reveals weaknesses
-
-The framework should evolve based on real engineering results rather than becoming a static collection of rules.
+MIT — see [LICENSE](LICENSE).
