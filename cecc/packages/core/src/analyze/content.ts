@@ -124,8 +124,36 @@ export function parseUnifiedDiff(diff: string): ContentChange[] {
   return changes;
 }
 
-export const addedText = (change: ContentChange): string => change.added.map((l) => l.text).join('\n');
-export const removedText = (change: ContentChange): string => change.removed.map((l) => l.text).join('\n');
+/**
+ * The added and removed sides of a change, as one string each.
+ *
+ * Memoized per change object. Rules ask for these constantly — a `matches()`
+ * pre-filter and then the `evaluate()` body, across a dozen rules per file.
+ * Rebuilding them each time allocated an array the length of the file plus a
+ * copy of its text, once per rule, which profiling showed to be the dominant
+ * cost of `cecc scan --all`.
+ *
+ * A WeakMap keyed on the change keeps each cached string alive exactly as long
+ * as the change itself, so a long scan does not accumulate file contents.
+ */
+const ADDED_TEXT_CACHE = new WeakMap<ContentChange, string>();
+const REMOVED_TEXT_CACHE = new WeakMap<ContentChange, string>();
+
+export function addedText(change: ContentChange): string {
+  const cached = ADDED_TEXT_CACHE.get(change);
+  if (cached !== undefined) return cached;
+  const text = change.added.map((l) => l.text).join('\n');
+  ADDED_TEXT_CACHE.set(change, text);
+  return text;
+}
+
+export function removedText(change: ContentChange): string {
+  const cached = REMOVED_TEXT_CACHE.get(change);
+  if (cached !== undefined) return cached;
+  const text = change.removed.map((l) => l.text).join('\n');
+  REMOVED_TEXT_CACHE.set(change, text);
+  return text;
+}
 
 /** Full post-change text when known, else just the added lines. */
 export const searchableText = (change: ContentChange): string => change.fullContent ?? addedText(change);

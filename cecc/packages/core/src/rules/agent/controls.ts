@@ -1,4 +1,4 @@
-import { isTestFile, matchAdded, searchableText, trulyRemoved , isNonExecutable} from '../../analyze/content.js';
+import { addedText, isNonExecutable, isTestFile, matchAdded, searchableText, trulyRemoved } from '../../analyze/content.js';
 import { lineEvidence, locations, type Rule, type RuleResult } from '../types.js';
 import { registerRules } from '../registry.js';
 import type { ContentChange } from '../../types/event.js';
@@ -121,7 +121,7 @@ const AGENT_005: Rule = {
         // A removal in the same edit that adds an endpoint is materially worse:
         // new surface plus a missing control is the combination that gets exploited.
         const addsEndpoint = /export\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE)|router\.(?:get|post|put|patch|delete)|app\.(?:get|post|put|patch|delete)/.test(
-          change.added.map((l) => l.text).join('\n'),
+          addedText(change),
         );
 
         results.push({
@@ -180,7 +180,7 @@ const AGENT_010: Rule = {
 
     for (const change of ctx.changes) {
       if (isTestFile(change.file) || isNonExecutable(change.file)) continue;
-      const addedText = change.added.map((l) => l.text).join('\n');
+      const addedSource = addedText(change);
 
       // Validation deleted from a file that still reads a request body.
       const validationGone = trulyRemoved(change, VALIDATION);
@@ -202,8 +202,8 @@ const AGENT_010: Rule = {
       }
 
       // New handler reading a body with no validation anywhere in the file.
-      const addsHandler = /export\s+(?:async\s+)?function\s+(?:POST|PUT|PATCH)|router\.(?:post|put|patch)|app\.(?:post|put|patch)/.test(addedText);
-      const readsBody = RAW_BODY_USE.test(addedText);
+      const addsHandler = /export\s+(?:async\s+)?function\s+(?:POST|PUT|PATCH)|router\.(?:post|put|patch)|app\.(?:post|put|patch)/.test(addedSource);
+      const readsBody = RAW_BODY_USE.test(addedSource);
       const hasValidation = VALIDATION.test(searchableText(change));
       if (addsHandler && readsBody && !hasValidation) {
         const lines = matchAdded(change, RAW_BODY_USE);
@@ -325,7 +325,7 @@ const AGENT_019: Rule = {
   remediation: 'Allow a fixed list of known origins and compare against it. Never reflect the request Origin, and never pair credentials with a wildcard.',
 
   matches(ctx) {
-    return ctx.changes.some((c) => /origin|cors/i.test(c.added.map((l) => l.text).join('\n')));
+    return ctx.changes.some((c) => /origin|cors/i.test(addedText(c)));
   },
 
   evaluate(ctx): RuleResult[] {
@@ -333,7 +333,7 @@ const AGENT_019: Rule = {
 
     for (const change of ctx.changes) {
       if (isTestFile(change.file) || isNonExecutable(change.file)) continue;
-      const text = change.added.map((l) => l.text).join('\n');
+      const text = addedText(change);
 
       const wildcard = matchAdded(change, /Access-Control-Allow-Origin['"]?\s*[,:]\s*['"]\*|origin\s*:\s*['"]\*['"]/i);
       const credentials = /Access-Control-Allow-Credentials['"]?\s*[,:]\s*['"]?true|credentials\s*:\s*true/i.test(text);
@@ -404,7 +404,7 @@ const AGENT_020: Rule = {
   remediation: 'Verify the signature against the raw body with a constant-time comparison, reject stale timestamps, and enforce idempotency on the provider event id with a unique constraint.',
 
   matches(ctx) {
-    return ctx.changes.some((c) => /webhook|stripe|payhere|paypal|razorpay/i.test(c.file) || /webhook/i.test(c.added.map((l) => l.text).join('\n')));
+    return ctx.changes.some((c) => /webhook|stripe|payhere|paypal|razorpay/i.test(c.file) || /webhook/i.test(addedText(c)));
   },
 
   evaluate(ctx): RuleResult[] {
@@ -412,7 +412,7 @@ const AGENT_020: Rule = {
 
     for (const change of ctx.changes) {
       if (isTestFile(change.file) || isNonExecutable(change.file)) continue;
-      const isWebhook = /webhook/i.test(change.file) || /webhook/i.test(change.added.map((l) => l.text).join('\n'));
+      const isWebhook = /webhook/i.test(change.file) || /webhook/i.test(addedText(change));
       if (!isWebhook) continue;
 
       const text = searchableText(change);
@@ -441,7 +441,7 @@ const AGENT_020: Rule = {
       }
 
       // New handler with no verification at all.
-      const addsHandler = /export\s+(?:async\s+)?function\s+POST|router\.post|app\.post/.test(change.added.map((l) => l.text).join('\n'));
+      const addsHandler = /export\s+(?:async\s+)?function\s+POST|router\.post|app\.post/.test(addedText(change));
       if (addsHandler && !verifies) {
         results.push({
           title: `Webhook handler without signature verification — ${change.file}`,

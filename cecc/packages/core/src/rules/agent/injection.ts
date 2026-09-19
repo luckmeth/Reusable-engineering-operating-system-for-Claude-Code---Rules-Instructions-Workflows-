@@ -1,4 +1,4 @@
-import { isTestFile, matchAdded, searchableText , isNonExecutable} from '../../analyze/content.js';
+import { addedText, isNonExecutable, isTestFile, matchAdded, searchableText } from '../../analyze/content.js';
 import { lineEvidence, locations, type Rule, type RuleResult } from '../types.js';
 import { registerRules } from '../registry.js';
 import type { ContentChange } from '../../types/event.js';
@@ -194,7 +194,7 @@ const AGENT_015: Rule = {
     'Enforce a maximum size, allowlist content types, and generate the storage object name server-side. Never use the supplied filename as a path.',
 
   matches(ctx) {
-    return ctx.changes.some((c) => /upload|multer|formidable|busboy|multipart|formData|putObject|\.upload\(/i.test(c.added.map((l) => l.text).join('\n')));
+    return ctx.changes.some((c) => /upload|multer|formidable|busboy|multipart|formData|putObject|\.upload\(/i.test(addedText(c)));
   },
 
   evaluate(ctx): RuleResult[] {

@@ -4,6 +4,11 @@ import { resolveRoot } from '@/lib/server';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+/** Poll interval while events are arriving. */
+const ACTIVE_MS = 700;
+/** Ceiling the interval backs off to when nothing is happening. */
+const IDLE_MAX_MS = 6000;
+
 /**
  * Server-sent events for the live activity view.
  *
@@ -40,8 +45,8 @@ export async function GET(request: Request): Promise<Response> {
         }
       };
 
-      const poll = (): void => {
-        if (closed) return;
+      const poll = (): boolean => {
+        if (closed) return false;
         // A fresh handle per poll keeps this from holding a stale snapshot
         // while hook processes append.
         let store: Store | null = null;
@@ -51,16 +56,33 @@ export async function GET(request: Request): Promise<Response> {
           if (events.length > 0) {
             lastSeq = Math.max(...events.map((e) => e.seq));
             send('events', events);
+            return true;
           }
+          return false;
         } catch (err) {
           send('error', { message: err instanceof Error ? err.message : 'poll failed' });
+          return false;
         } finally {
           store?.close();
         }
       };
 
       send('ready', { projectId: project.id, since: lastSeq });
-      const interval = setInterval(poll, 1000);
+
+      // Adaptive interval. A fixed one-second poll opened and closed a SQLite
+      // handle 3,600 times an hour on an idle project, which is most hours.
+      // Activity pulls the interval back down to ACTIVE_MS on the first event,
+      // so the live feed still feels immediate while work is happening.
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let delay = ACTIVE_MS;
+
+      const tick = (): void => {
+        if (closed) return;
+        const sawEvents = poll();
+        delay = sawEvents ? ACTIVE_MS : Math.min(IDLE_MAX_MS, Math.round(delay * 1.6));
+        timer = setTimeout(tick, delay);
+      };
+      timer = setTimeout(tick, delay);
       // A comment frame keeps proxies from closing an idle connection.
       const keepalive = setInterval(() => {
         if (!closed) {
@@ -74,7 +96,7 @@ export async function GET(request: Request): Promise<Response> {
 
       const stop = (): void => {
         closed = true;
-        clearInterval(interval);
+        if (timer) clearTimeout(timer);
         clearInterval(keepalive);
         try {
           controller.close();
