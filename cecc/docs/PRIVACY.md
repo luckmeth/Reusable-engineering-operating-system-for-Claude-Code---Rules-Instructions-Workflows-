@@ -3,8 +3,10 @@
 ## Default posture
 
 Nothing leaves the machine. There is no telemetry, no analytics, no phone-home,
-and no network call of any kind unless cloud sync is explicitly enabled — which
-it is not by default, and which this build does not yet implement.
+and no network call of any kind unless you ask for one. Two things can make an
+outbound request, and both are off until asked: external scanners, which need
+`--online` (see `EXTERNAL_SCANNERS.md`), and cloud sync, which is disabled by
+default in every new project.
 
 All state lives in `.cecc/` inside the project:
 
@@ -61,19 +63,64 @@ past the window; findings are kept, since they are the durable record.
 
 ## Cloud sync
 
-Not implemented in this build. The configuration shape exists and defaults to
-disabled. When it is built, these constraints hold:
+Opt-in, per project, off in every new project. `cecc sync` **defaults to a dry
+run**: typing it out of curiosity prints the exact payload and transmits
+nothing. Sending requires `--push` *and* the configuration being enabled.
 
-- Opt-in per project, never a default.
-- Source code is never uploaded. Evidence excerpts only if
-  `includeSourceExcerpts` is separately enabled.
-- Redaction runs before transmission, as it already does before storage.
-- The endpoint is explicit; there is no default destination.
+```bash
+cecc sync                        # build the payload, print it, send nothing
+cecc sync --out payload.json     # write it to a file and read it properly
+cecc sync --push                 # transmit, if preflight passes
+```
+
+A dry run performs the whole preflight and builds the real payload, so what it
+shows is the bytes that would actually be sent rather than an approximation.
+
+### What the payload carries
+
+By default: judgements and counts. Rule id, severity, layer, category,
+verification state, confidence, occurrence counts and timestamps; event and
+finding totals; the integrity-chain result; the workflow stage. The project name
+is **hashed**, not sent.
+
+Never, under any setting: file contents, diffs, the agent's prompts or
+reasoning, environment variables, or secrets — which are redacted at storage and
+redacted again on the way out, so a field added to a finding later cannot leak
+through a path nobody rechecked.
+
+Only with `includeSourceExcerpts` set to `true`: finding titles, file paths,
+commands and evidence text. Everything the payload leaves out is listed *in* the
+payload, under `excluded`, so the omission is visible to whoever receives it.
+
+### Preflight
+
+Every refusal is a separate case with its own message, because "sync failed"
+teaches nobody anything:
+
+| Refusal | Meaning |
+|---|---|
+| `disabled` | `cloudSync.enabled` is false. This is the default. |
+| `no-endpoint` | Enabled with no endpoint, or an unparseable one. |
+| `insecure-endpoint` | The endpoint is `http`. Findings would cross the network in clear text. |
+| `private-endpoint` | It points at loopback or a private range. Allowed with `--allow-private`. |
+| `no-token` | `CECC_SYNC_TOKEN` is not set. |
+
+The token is read from the environment and never from `config.json` or the
+database. A credential in `.cecc/` is a credential in a directory people copy
+between machines.
+
+### Afterwards
+
+A push writes a `sync.pushed` audit entry with the endpoint, HTTP status,
+payload digest and byte count — and not the payload. It is derived data; keeping
+a copy would double what is at rest for no benefit. A failure writes
+`sync.failed` with the error.
 
 ## Verifying for yourself
 
 ```bash
-cecc doctor          # reports cloud sync state
+cecc doctor                      # reports cloud sync state
+cecc sync                        # prints exactly what sync would transmit
 sqlite3 .cecc/cecc.db "select command from events limit 20"
 ```
 

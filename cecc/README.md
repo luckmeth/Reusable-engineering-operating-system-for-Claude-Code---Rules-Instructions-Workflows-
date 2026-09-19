@@ -73,11 +73,14 @@ cecc status     # stage, findings, validation, what is blocking release
 | `cecc doctor` | Verify installation, hook wiring and event-chain integrity |
 | `cecc status` | Workflow stage, findings, validation state, blockers |
 | `cecc scan` | Run detection rules over changes (or `--all`) |
+| `cecc scan --external` | Run npm audit, OSV and Semgrep; `--online` to allow network |
+| `cecc tasks` | Task list read from `docs/TASKS.md` and source TODO markers |
+| `cecc sync` | Show exactly what cloud sync would transmit; sends only with `--push` |
 | `cecc findings` | List findings with evidence; `--id` for full detail |
 | `cecc session` | List sessions, or replay one chronologically |
 | `cecc workflow` | Show the workflow; `--pin` to override inference |
 | `cecc policy` | Show or change enforcement per rule |
-| `cecc rules` | Browse the 28 detection rules |
+| `cecc rules` | Browse the detection rules |
 | `cecc report` | Evidence report in Markdown or JSON, limitations included |
 
 ---
@@ -88,8 +91,25 @@ cecc status     # stage, findings, validation, what is blocking release
 cd apps/dashboard && npm run build && npm start   # http://localhost:4317
 ```
 
-Overview, workflow, live activity (SSE), findings, and session replay — all
-read from the local event store. No placeholder data anywhere.
+Overview, workflow, live activity (SSE), findings, controls, model intelligence
+and session replay — all read from the local event store. No placeholder data
+anywhere. Every page has a plain-English mode and a technical mode.
+
+---
+
+## Desktop application
+
+```bash
+npm run desktop:start    # run the packaged shell
+npm run desktop:linux    # AppImage + tar.gz
+npm run desktop:win      # NSIS installer + zip
+npm run desktop:mac      # dmg + zip
+```
+
+One window, no install step, no Node required on the machine: the Electron
+binary runs the dashboard as a child process on its own bundled Node 24, and
+the CLI ships inside. The window is sandboxed with no preload bridge, and the
+server binds to loopback on a random port. See [docs/DESKTOP.md](docs/DESKTOP.md).
 
 ---
 
@@ -162,15 +182,22 @@ become a second place to steal credentials from. See [docs/PRIVACY.md](docs/PRIV
 
 ## Status
 
-Working software, early. 159 tests pass, including adversarial tests that treat
-CECC as the target.
+Working software. 236 tests pass, including adversarial tests that treat CECC as
+the target.
 
-**Implemented:** event model with integrity chain · 28 rules · 6 correlation
-patterns · workflow inference and gates · policy engine · Claude Code adapter ·
-CLI · dashboard.
+**Implemented:** event model with integrity chain · 31 rules · 6 correlation
+patterns · workflow inference and gates · policy engine · Claude Code adapter
+with live-verified blocking · external scanners (npm audit, OSV, Semgrep) ·
+task ingestion · opt-in cloud sync · local ML triage · CLI · dashboard ·
+packaged desktop application.
 
-**Not implemented:** cloud sync · automatic task ingestion from docs · external
-scanner adapters (Semgrep, OSV) · AI-assisted analysis for ambiguous cases.
+**Not implemented:** AI-assisted analysis for ambiguous cases — deliberately, as
+it would add a network dependency and a non-reproducible verdict to a tool whose
+value is that every claim is traceable.
+
+**Honest gaps:** the OSV live round trip is tested against recorded responses,
+not against `api.osv.dev`. The macOS target is configured and has never been
+built. Both are recorded in [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md).
 
 Known rough edges are listed in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
@@ -182,7 +209,10 @@ Known rough edges are listed in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Shape, packages, why there is no daemon |
 | [EVENT_MODEL.md](docs/EVENT_MODEL.md) | The event, integrity chain, normalized changes |
-| [RULE_ENGINE.md](docs/RULE_ENGINE.md) | Layers, all 28 rules, false-positive control |
+| [RULE_ENGINE.md](docs/RULE_ENGINE.md) | Layers, all 28 agent rules, false-positive control |
+| [EXTERNAL_SCANNERS.md](docs/EXTERNAL_SCANNERS.md) | npm audit, OSV, Semgrep, and how coverage gaps are reported |
+| [DESKTOP.md](docs/DESKTOP.md) | The Electron shell, what ships inside, cross-building |
+| [MACHINE_LEARNING.md](docs/MACHINE_LEARNING.md) | The local model, its metrics, what it is not allowed to do |
 | [WORKFLOW.md](docs/WORKFLOW.md) | Stage inference and completion gates |
 | [CLAUDE_CODE_INTEGRATION.md](docs/CLAUDE_CODE_INTEGRATION.md) | Hooks, payloads, blocking, safety rules |
 | [THREAT_MODEL.md](docs/THREAT_MODEL.md) | What CECC defends against, and what it does not |
