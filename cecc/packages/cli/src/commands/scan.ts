@@ -3,15 +3,19 @@ import { join, relative } from 'node:path';
 import {
   Store,
   ceccPaths,
+  describeCoverage,
   git,
   ingest,
   loadPolicySet,
   newId,
+  runExternalScanners,
   runRules,
   parseCommand,
   type ContentChange,
+  type ExternalScanReport,
   type Finding,
   type ProjectConfig,
+  type ScannerRun,
 } from '@cecc/core';
 import { c, heading, kv, SEVERITY_COLOR, wrapText } from '../ui.js';
 
@@ -26,14 +30,30 @@ import { c, heading, kv, SEVERITY_COLOR, wrapText } from '../ui.js';
 export async function scanCommand(
   root: string,
   project: ProjectConfig,
-  opts: { all?: boolean; staged?: boolean; path?: string; json?: boolean } = {},
+  opts: {
+    all?: boolean;
+    staged?: boolean;
+    path?: string;
+    json?: boolean;
+    limit?: number;
+    external?: boolean;
+    online?: boolean;
+    scanner?: string;
+  } = {},
 ): Promise<number> {
   const paths = ceccPaths(root);
   const store = new Store(paths.db);
   const policies = loadPolicySet(paths.policies, project.environment).set;
 
   try {
-    const changes = await collectChanges(root, opts);
+    // --external is a different job from rule scanning: it asks other tools
+    // about dependencies and source, not about what the agent just did.
+    if (opts.external) {
+      return await externalScan(root, project, store, opts);
+    }
+
+    const collected = await collectChanges(root, opts);
+    const changes = collected.changes;
 
     if (changes.length === 0) {
       console.log(c.gray('\n  Nothing to scan. The working tree matches HEAD.'));
@@ -94,13 +114,23 @@ export async function scanCommand(
     store.audit(project.id, 'user', 'scan.completed', { files: changes.length, findings: produced.length, durationMs });
 
     if (opts.json) {
-      console.log(JSON.stringify({ scanned: changes.length, durationMs, findings: produced, errors }, null, 2));
+      console.log(
+        JSON.stringify(
+          { scanned: changes.length, eligible: collected.eligible, notScanned: collected.skipped, durationMs, findings: produced, errors },
+          null,
+          2,
+        ),
+      );
       return produced.some((f) => f.severity === 'critical' || f.severity === 'high') ? 1 : 0;
     }
 
     console.log(heading('Scan complete'));
     console.log(kv('Scope', opts.all ? 'all tracked files' : opts.staged ? 'staged changes' : 'working-tree changes'));
     console.log(kv('Files analysed', String(changes.length)));
+    if (collected.skipped > 0) {
+      console.log(kv('Not scanned', c.yellow(`${collected.skipped} of ${collected.eligible} — limit reached`)));
+      console.log(c.gray(`      Raise it with --limit ${collected.eligible}. Those files were not examined.`));
+    }
     console.log(kv('Duration', `${durationMs}ms`));
     console.log(kv('Findings', produced.length === 0 ? c.green('none') : String(produced.length)));
 
@@ -113,7 +143,11 @@ export async function scanCommand(
     if (produced.length === 0) {
       console.log(`\n  ${c.green('No findings in the scanned scope.')}`);
       // The distinction the whole product turns on.
-      console.log(c.gray('  This means no rule matched — not that the code is secure.\n'));
+      console.log(c.gray('  This means no rule matched — not that the code is secure.'));
+      if (collected.skipped > 0) {
+        console.log(c.yellow(`  ${collected.skipped} eligible file(s) were never read. Coverage is partial.`));
+      }
+      console.log('');
       return 0;
     }
 
@@ -163,31 +197,175 @@ export function printFinding(finding: Finding): void {
   console.log('');
 }
 
+
+// ------------------------------------------------------------- external scan
+
+/**
+ * `cecc scan --external` — run third-party scanners and record what they said.
+ *
+ * The whole value here is honest bookkeeping. A scanner that did not run is
+ * written into the event timeline as a coverage gap with the reason, so a later
+ * "no findings" can never be mistaken for "checked and clean".
+ */
+async function externalScan(
+  root: string,
+  project: ProjectConfig,
+  store: Store,
+  opts: { online?: boolean; scanner?: string; json?: boolean },
+): Promise<number> {
+  const session =
+    store.getCurrentSession(project.id) ??
+    store.ensureSession({
+      projectId: project.id,
+      externalId: `scan-${newId().slice(0, 8)}`,
+      agentId: null,
+      startReason: 'cecc scan --external',
+    });
+
+  const report = await runExternalScanners({
+    root,
+    project,
+    allowNetwork: opts.online ?? false,
+    ...(opts.scanner ? { only: [opts.scanner] } : {}),
+  });
+
+  const produced: Finding[] = [];
+  for (const run of report.runs) {
+    // One event per scanner, whatever the outcome. The gap is the record.
+    const event = store.appendEvent({
+      projectId: project.id,
+      sessionId: session.id,
+      workflowRunId: null,
+      agentId: null,
+      source: 'security',
+      type: 'security.external-scan',
+      severity: run.outcome === 'failed' ? 'medium' : 'info',
+      status: run.outcome === 'ran' ? 'success' : run.outcome === 'failed' ? 'failed' : 'warning',
+      command: `cecc scan --external --scanner ${run.scannerId}`,
+      tool: run.scannerId,
+      filePaths: [],
+      metadata: {
+        scanner: run.scannerId,
+        outcome: run.outcome,
+        note: run.note,
+        version: run.version,
+        findings: run.findings.length,
+        durationMs: run.durationMs,
+        ...(run.error ? { error: run.error } : {}),
+      },
+      evidence: [],
+      durationMs: run.durationMs,
+      parentEventId: null,
+    });
+
+    for (const finding of run.findings) {
+      produced.push(store.upsertFinding({ ...finding, sessionId: session.id, relatedEvents: [event.id] }));
+    }
+  }
+
+  store.audit(project.id, 'user', 'scan.external.completed', {
+    ran: report.ran,
+    skipped: report.skipped,
+    findings: report.totalFindings,
+    online: opts.online ?? false,
+  });
+
+  if (opts.json) {
+    console.log(JSON.stringify({ ...report, findings: produced }, null, 2));
+    return produced.some((f) => f.severity === 'critical' || f.severity === 'high') ? 1 : 0;
+  }
+
+  console.log(heading('External scanners'));
+  for (const run of report.runs) printScannerRun(run);
+
+  console.log(kv('Coverage', report.skipped > 0 ? c.yellow(describeCoverage(report)) : c.green(describeCoverage(report))));
+  console.log(kv('Duration', `${report.durationMs}ms`));
+
+  if (produced.length === 0) {
+    console.log(`\n  ${report.ran === 0 ? c.yellow('No external scanner ran.') : c.green('No findings from the scanners that ran.')}`);
+    console.log(c.gray(report.ran === 0
+      ? '  Nothing was checked. This is not a clean result.\n'
+      : '  This covers only what those scanners look at.\n'));
+    return 0;
+  }
+
+  console.log('');
+  for (const finding of [...produced].sort((a, b) => rank(b.severity) - rank(a.severity)).slice(0, 25)) {
+    printFinding(finding);
+  }
+  if (produced.length > 25) console.log(c.gray(`  ... and ${produced.length - 25} more. Run \`cecc findings\` to page through them.\n`));
+
+  const blocking = produced.filter((f) => f.severity === 'critical' || f.severity === 'high');
+  if (blocking.length > 0) console.log(c.red(`  ${blocking.length} finding(s) at high or critical severity.\n`));
+  return blocking.length > 0 ? 1 : 0;
+}
+
+const OUTCOME_LABEL: Record<ScannerRun['outcome'], (s: string) => string> = {
+  ran: c.green,
+  unavailable: c.gray,
+  'not-applicable': c.gray,
+  'needs-network': c.yellow,
+  failed: c.red,
+};
+
+function printScannerRun(run: ScannerRun): void {
+  const paint = OUTCOME_LABEL[run.outcome] ?? c.gray;
+  const mark = run.outcome === 'ran' ? '✔' : run.outcome === 'failed' ? '✖' : '·';
+  console.log(`  ${paint(mark)} ${c.bold(run.name.padEnd(12))} ${paint(run.outcome)}`);
+  console.log(c.gray(`      ${run.note}`));
+  if (run.version) console.log(c.gray(`      version: ${run.version}`));
+  if (run.error) console.log(c.gray(`      error:   ${run.error.split('\n')[0]?.slice(0, 120)}`));
+}
+
+export type { ExternalScanReport };
+
 const rank = (s: string): number => ({ critical: 4, high: 3, medium: 2, low: 1, info: 0 })[s] ?? 0;
 
-async function collectChanges(root: string, opts: { all?: boolean; staged?: boolean; path?: string }): Promise<ContentChange[]> {
+/** Default ceiling on a full-tree scan. Overridable with --limit. */
+export const DEFAULT_SCAN_LIMIT = 5000;
+
+interface CollectedChanges {
+  changes: ContentChange[];
+  /** Eligible files the limit excluded. Non-zero means coverage is partial. */
+  skipped: number;
+  eligible: number;
+}
+
+async function collectChanges(
+  root: string,
+  opts: { all?: boolean; staged?: boolean; path?: string; limit?: number },
+): Promise<CollectedChanges> {
   if (opts.path) {
     const target = join(root, opts.path);
-    if (!existsSync(target)) return [];
-    return [fileAsChange(root, target)].filter((c): c is ContentChange => c !== null);
+    if (!existsSync(target)) return { changes: [], skipped: 0, eligible: 0 };
+    const change = fileAsChange(root, target);
+    return { changes: change ? [change] : [], skipped: 0, eligible: 1 };
   }
 
   if (opts.all) {
     const files = await git.getTrackedFiles(root).catch(() => [] as string[]);
-    return files
-      .filter((f) => SCANNABLE.test(f) && !SKIP_DIR.test(f))
-      .slice(0, 2000)
-      .map((f) => fileAsChange(root, join(root, f)))
-      .filter((c): c is ContentChange => c !== null);
+    const eligible = files.filter((f) => SCANNABLE.test(f) && !SKIP_DIR.test(f));
+    const limit = opts.limit && opts.limit > 0 ? opts.limit : DEFAULT_SCAN_LIMIT;
+    const selected = eligible.slice(0, limit);
+    return {
+      changes: selected
+        .map((f) => fileAsChange(root, join(root, f)))
+        .filter((c): c is ContentChange => c !== null),
+      // Silently truncating a security scan produces a result that reads as
+      // "clean" for files nobody looked at. The count is carried out so the
+      // command can say so.
+      skipped: eligible.length - selected.length,
+      eligible: eligible.length,
+    };
   }
 
   try {
     const diff = await git.getWorkingDiff(root, opts.staged ?? false);
     // An empty unstaged diff with staged content is a common state; fall back.
-    if (diff.length === 0 && !opts.staged) return await git.getWorkingDiff(root, true);
-    return diff;
+    const resolved = diff.length === 0 && !opts.staged ? await git.getWorkingDiff(root, true) : diff;
+    return { changes: resolved, skipped: 0, eligible: resolved.length };
   } catch {
-    return [];
+    return { changes: [], skipped: 0, eligible: 0 };
   }
 }
 

@@ -12,6 +12,7 @@ import './agent/secrets.js';
 import './agent/data.js';
 import './agent/injection.js';
 import './agent/supply.js';
+import './external.js';
 
 export * from './types.js';
 export * from './registry.js';

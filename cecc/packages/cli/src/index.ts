@@ -13,6 +13,8 @@ import { statusCommand } from './commands/status.js';
 import { scanCommand } from './commands/scan.js';
 import { doctorCommand } from './commands/doctor.js';
 import { findingsCommand, policyCommand, reportCommand, rulesCommand, sessionCommand, workflowCommand } from './commands/misc.js';
+import { tasksCommand } from './commands/tasks.js';
+import { syncCommand } from './commands/sync.js';
 import { runHook } from './hook.js';
 
 interface Args {
@@ -72,10 +74,14 @@ ${c.bold('OBSERVE')}
       List sessions, or replay one as a chronological timeline.
   ${c.cyan('cecc workflow')} ${c.gray('[--pin <STAGE>] [--unpin]')}
       Show the workflow, or override an incorrect inference.
+  ${c.cyan('cecc tasks')} ${c.gray('[--ingest] [--dry-run] [--all] [--no-todos]')}
+      Task list, read from docs/TASKS.md checkboxes and source TODO markers.
 
 ${c.bold('ANALYSE')}
-  ${c.cyan('cecc scan')} ${c.gray('[--all] [--staged] [--path <file>] [--json]')}
+  ${c.cyan('cecc scan')} ${c.gray('[--all] [--staged] [--path <file>] [--limit N] [--json]')}
       Run detection rules over changes (default) or the whole tree.
+  ${c.cyan('cecc scan --external')} ${c.gray('[--online] [--scanner npm-audit|osv|semgrep]')}
+      Run third-party scanners. Network access is off unless --online is given.
   ${c.cyan('cecc findings')} ${c.gray('[--id <id>] [--layer agent|application|cecc] [--all]')}
       List findings with evidence, or inspect one in full.
   ${c.cyan('cecc findings --resolve <id>')} ${c.gray('| --suppress <id> --reason "..." [--days N]')}
@@ -88,6 +94,8 @@ ${c.bold('CONTROL')}
       Browse the detection rules and what each one is for.
   ${c.cyan('cecc report')} ${c.gray('[--out report.md] [--json]')}
       Produce an evidence report, including stated limitations.
+  ${c.cyan('cecc sync')} ${c.gray('[--push] [--out payload.json]')}
+      Show exactly what cloud sync would transmit. Sends only with --push.
 
 ${c.gray('Docs: cecc/docs/  ·  Default enforcement mode for a new project is')} ${c.yellow('warn')}${c.gray(' — records and warns, blocks nothing.')}
 `);
@@ -153,6 +161,10 @@ async function main(): Promise<number> {
         staged: bool(args.flags['staged']),
         path: str(args.flags['path']) ?? args.positional[0],
         json: bool(args.flags['json']),
+        limit: args.flags['limit'] ? Number(args.flags['limit']) : undefined,
+        external: bool(args.flags['external']),
+        online: bool(args.flags['online']),
+        scanner: str(args.flags['scanner']),
       });
 
     case 'findings':
@@ -179,6 +191,15 @@ async function main(): Promise<number> {
     case 'workflow':
       return workflowCommand(root, project, { pin: str(args.flags['pin']), unpin: bool(args.flags['unpin']) });
 
+    case 'tasks':
+      return tasksCommand(root, project, {
+        ingest: bool(args.flags['ingest']),
+        dryRun: bool(args.flags['dry-run']) || bool(args.flags['dryRun']),
+        json: bool(args.flags['json']),
+        all: bool(args.flags['all']),
+        noTodos: bool(args.flags['no-todos']) || bool(args.flags['noTodos']),
+      });
+
     case 'session':
       return sessionCommand(root, project, {
         id: str(args.flags['id']) ?? args.positional[0],
@@ -189,6 +210,15 @@ async function main(): Promise<number> {
 
     case 'report':
       return reportCommand(root, project, { out: str(args.flags['out']), json: bool(args.flags['json']) });
+
+    case 'sync':
+      return syncCommand(root, project, {
+        push: bool(args.flags['push']),
+        json: bool(args.flags['json']),
+        out: str(args.flags['out']),
+        allowPrivate: bool(args.flags['allow-private']) || bool(args.flags['allowPrivate']),
+        limit: args.flags['limit'] ? Number(args.flags['limit']) : undefined,
+      });
 
     default:
       console.error(c.red(`\n  Unknown command '${args.command}'.\n`));

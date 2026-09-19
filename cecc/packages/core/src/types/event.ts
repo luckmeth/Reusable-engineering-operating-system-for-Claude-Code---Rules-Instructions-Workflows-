@@ -41,6 +41,7 @@ export const EVENT_TYPES = [
   'build.run',
   // analysis
   'security.scan',
+  'security.external-scan',
   'dependency.scan',
   'finding.opened',
   'finding.resolved',

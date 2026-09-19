@@ -825,11 +825,37 @@ export class Store {
     return task;
   }
 
+  /** Reads one task by id. Returns null rather than throwing on a miss. */
+  getTask(id: string): Task | null {
+    const rows = this.db.prepare('SELECT * FROM tasks WHERE id = ?').all(id) as Row[];
+    const row = rows[0];
+    return row ? this.rowToTask(row) : null;
+  }
+
+  /**
+   * Removes tasks by id.
+   *
+   * Used only by ingestion, to drop tasks whose source line no longer exists.
+   * Tasks a person created are never touched by it — they have no source file
+   * to disappear from.
+   */
+  deleteTasks(ids: string[]): number {
+    if (ids.length === 0) return 0;
+    const statement = this.db.prepare('DELETE FROM tasks WHERE id = ?');
+    let removed = 0;
+    for (const id of ids) removed += statement.run(id).changes as number;
+    return removed;
+  }
+
   listTasks(projectId: string): Task[] {
     const rows = this.db
       .prepare('SELECT * FROM tasks WHERE project_id = ? ORDER BY updated_at DESC')
       .all(projectId) as Row[];
-    return rows.map((row) => ({
+    return rows.map((row) => this.rowToTask(row));
+  }
+
+  private rowToTask(row: Row): Task {
+    return {
       id: str(row['id']),
       projectId: str(row['project_id']),
       title: str(row['title']),
@@ -846,7 +872,7 @@ export class Store {
       origin: str(row['origin']),
       createdAt: str(row['created_at']),
       updatedAt: str(row['updated_at']),
-    }));
+    };
   }
 
   // --------------------------------------------------------------- workflow

@@ -53,6 +53,52 @@ export {
   type EnforcementAction,
 } from './policy.js';
 
+// External scanners
+export {
+  EXTERNAL_SCANNERS,
+  getScanner,
+  runExternalScanners,
+  describeCoverage,
+  readNpmLockfile,
+  npmAuditScanner,
+  osvScanner,
+  semgrepScanner,
+  type ExternalScanner,
+  type ExternalScanOptions,
+  type ExternalScanReport,
+  type ScannerOptions,
+  type ScannerOutcome,
+  type ScannerRun,
+} from './scanners/index.js';
+
+// Cloud sync — opt-in, never on by default
+export {
+  syncNow,
+  preflight,
+  buildSyncPayload,
+  payloadDigest,
+  type SyncOptions,
+  type SyncResult,
+  type SyncPreflight,
+  type SyncRefusal,
+  type SyncPayload,
+  type SyncFinding,
+} from './sync/client.js';
+
+// Tasks
+export {
+  ingestTasks,
+  ingestedTaskId,
+  reconcileStatus,
+  parseTaskDocument,
+  scanTodoMarkers,
+  findTaskDocuments,
+  TASK_DOCUMENTS,
+  type DiscoveredTask,
+  type TaskIngestOptions,
+  type TaskIngestReport,
+} from './tasks/ingest.js';
+
 // Monitors
 export * as git from './monitors/git.js';
 export { parseTestOutput, parseValidationOutput, type TestSummary } from './monitors/test.js';
