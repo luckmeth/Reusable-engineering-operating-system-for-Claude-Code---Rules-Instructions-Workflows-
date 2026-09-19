@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.next/
+out/
+coverage/
+
+# CECC's own local event store, when CECC is run against this repo
+.cecc/
