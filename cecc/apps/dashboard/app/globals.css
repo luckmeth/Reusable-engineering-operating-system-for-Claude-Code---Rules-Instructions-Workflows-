@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-surface text-ink antialiased;
+  font-feature-settings: 'cv02', 'cv03', 'cv04';
+}
+
+/* Severity is the primary signal in this interface, so it gets a consistent
+   treatment everywhere rather than ad-hoc colours per component. */
+.sev-critical { @apply text-sev-critical border-sev-critical/40 bg-sev-critical/10; }
+.sev-high     { @apply text-sev-high     border-sev-high/40     bg-sev-high/10; }
+.sev-medium   { @apply text-sev-medium   border-sev-medium/40   bg-sev-medium/10; }
+.sev-low      { @apply text-sev-low      border-sev-low/40      bg-sev-low/10; }
+.sev-info     { @apply text-sev-info     border-sev-info/40     bg-sev-info/10; }
+
+.card { @apply rounded-lg border border-surface-border bg-surface-raised; }
+.mono { @apply font-mono text-[13px]; }

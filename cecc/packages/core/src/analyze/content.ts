@@ -130,9 +130,64 @@ export const removedText = (change: ContentChange): string => change.removed.map
 /** Full post-change text when known, else just the added lines. */
 export const searchableText = (change: ContentChange): string => change.fullContent ?? addedText(change);
 
+/**
+ * Lines that define a pattern rather than use one.
+ *
+ * `const SENSITIVE = /password|token/i;` describes what to look for; it does
+ * not leak anything. Any codebase with validation, sanitization or redaction
+ * logic contains lines like this, and matching them produces findings that can
+ * never be acted on. A security tool's own rule files are the extreme case —
+ * this was found by scanning CECC with CECC.
+ */
+const PATTERN_DEFINITION =
+  /^\s*(?:(?:export\s+)?(?:const|let|var)\s+[\w$]+\s*(?::[^=]+)?=|[\w$'"]+\s*:)\s*(?:new\s+RegExp\s*\(|\/(?![/*]))/;
+
+/**
+ * A substantial regex literal anywhere on the line — in a rule table, or as
+ * the receiver of .test()/.exec()/.match(). In every case the line is
+ * describing a pattern rather than exhibiting one.
+ */
+const INLINE_REGEX_LITERAL = /\/(?:[^/\\\n]|\\.){12,}\/[gimsuy]*\s*(?:[,;)\]}]|\.(?:test|exec|match|replace|source))/;
+
+/**
+ * A line dominated by a natural-language string literal.
+ *
+ * Error messages, impact descriptions and help text routinely contain the very
+ * words security rules look for — "tenant", "password", "request body". The
+ * text is describing a problem, not causing one. Detected by looking for a long
+ * quoted run with enough spaces to be prose rather than a path, query or
+ * template expression.
+ */
+export function isProseString(text: string): boolean {
+  for (const match of text.matchAll(/(['"`])((?:[^\\]|\\.){40,}?)\1/g)) {
+    const body = match[2] ?? '';
+
+    // Interpolation means the string is being *built*, which is exactly the
+    // dangerous case these rules exist to catch. A template carrying request
+    // data into a query is never prose, however sentence-like it reads.
+    // Without this exclusion the guard silently suppressed SQL injection
+    // detection — caught by the rule's own positive test.
+    if (/\$\{|\$\(|%s|\{\}|\+\s*\w+\s*\+/.test(body)) continue;
+
+    // Query and markup languages are prose-shaped but are not prose.
+    if (/\b(?:SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|WHERE|FROM|JOIN)\b/i.test(body)) continue;
+    if (/<\/?[a-z][^>]*>/i.test(body)) continue;
+
+    const spaces = (body.match(/ /g) ?? []).length;
+    // Several spaces and few operators reads as a sentence, not an expression.
+    if (spaces >= 6 && !/[;{}()[\]=<>]{3,}/.test(body)) return true;
+  }
+  return false;
+}
+
+export function isPatternDefinition(text: string): boolean {
+  return PATTERN_DEFINITION.test(text) || INLINE_REGEX_LITERAL.test(text);
+}
+
 /** Added lines matching a pattern, with their line numbers for evidence. */
 export function matchAdded(change: ContentChange, pattern: RegExp): ChangedLine[] {
   return change.added.filter((l) => {
+    if (isPatternDefinition(l.text) || isProseString(l.text)) return false;
     pattern.lastIndex = 0;
     return pattern.test(l.text);
   });
@@ -140,6 +195,7 @@ export function matchAdded(change: ContentChange, pattern: RegExp): ChangedLine[
 
 export function matchRemoved(change: ContentChange, pattern: RegExp): ChangedLine[] {
   return change.removed.filter((l) => {
+    if (isPatternDefinition(l.text) || isProseString(l.text)) return false;
     pattern.lastIndex = 0;
     return pattern.test(l.text);
   });
@@ -168,6 +224,24 @@ const CLIENT_FILE = /(^|[/\\])(?:components|app|pages|src\/client|public)[/\\]|\
 const SERVER_FILE = /(^|[/\\])(?:server|api|route|middleware|actions|lib\/server)[/\\]|route\.[jt]s$|\.server\.[jt]s$/i;
 
 export const isTestFile = (path: string): boolean => TEST_FILE.test(path);
+
+/**
+ * Documentation, including a repository's own security guidance.
+ *
+ * Code-security rules skip these: a snippet in a README is an illustration,
+ * not something that executes, and flagging `tenant_id` in a paragraph
+ * explaining why tenant_id must not come from the request is pure noise.
+ *
+ * Rules about *content* rather than code — hardcoded secrets (AGENT-006) and
+ * agent-directed instructions (AGENT-027) — deliberately still run here. A real
+ * credential in a README is a real leak, and documentation is exactly where
+ * prompt injection hides.
+ */
+const DOCUMENTATION_FILE = /\.(?:mdx?|txt|rst|adoc)$/i;
+export const isDocumentationFile = (path: string): boolean => DOCUMENTATION_FILE.test(path);
+
+/** Files that code-security rules should not analyse. */
+export const isNonExecutable = (path: string): boolean => isDocumentationFile(path);
 export const isMigrationFile = (path: string): boolean => MIGRATION_FILE.test(path);
 export const isConfigFile = (path: string): boolean => CONFIG_FILE.test(path);
 export const isServerFile = (path: string): boolean => SERVER_FILE.test(path);

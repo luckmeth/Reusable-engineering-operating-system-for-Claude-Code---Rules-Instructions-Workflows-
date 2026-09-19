@@ -1,4 +1,4 @@
-import { isTestFile, matchAdded, searchableText, trulyRemoved } from '../../analyze/content.js';
+import { isTestFile, matchAdded, searchableText, trulyRemoved , isNonExecutable} from '../../analyze/content.js';
 import { lineEvidence, locations, type Rule, type RuleResult } from '../types.js';
 import { registerRules } from '../registry.js';
 import type { ContentChange } from '../../types/event.js';
@@ -110,7 +110,7 @@ const AGENT_005: Rule = {
 
     for (const change of ctx.changes) {
       // Test files are covered by AGENT-003; applying control rules here would double-report.
-      if (isTestFile(change.file) || change.isNewFile) continue;
+      if (isTestFile(change.file) || isNonExecutable(change.file) || change.isNewFile) continue;
 
       for (const control of CONTROLS) {
         // trulyRemoved ignores lines that came back in any form, so moving or
@@ -179,7 +179,7 @@ const AGENT_010: Rule = {
     const results: RuleResult[] = [];
 
     for (const change of ctx.changes) {
-      if (isTestFile(change.file)) continue;
+      if (isTestFile(change.file) || isNonExecutable(change.file)) continue;
       const addedText = change.added.map((l) => l.text).join('\n');
 
       // Validation deleted from a file that still reads a request body.
@@ -287,7 +287,7 @@ const AGENT_018: Rule = {
   evaluate(ctx): RuleResult[] {
     const results: RuleResult[] = [];
     for (const change of ctx.changes) {
-      if (isTestFile(change.file)) continue;
+      if (isTestFile(change.file) || isNonExecutable(change.file)) continue;
       for (const weakening of AUTH_WEAKENING) {
         const lines = matchAdded(change, weakening.pattern);
         if (lines.length === 0) continue;
@@ -332,7 +332,7 @@ const AGENT_019: Rule = {
     const results: RuleResult[] = [];
 
     for (const change of ctx.changes) {
-      if (isTestFile(change.file)) continue;
+      if (isTestFile(change.file) || isNonExecutable(change.file)) continue;
       const text = change.added.map((l) => l.text).join('\n');
 
       const wildcard = matchAdded(change, /Access-Control-Allow-Origin['"]?\s*[,:]\s*['"]\*|origin\s*:\s*['"]\*['"]/i);
@@ -411,7 +411,7 @@ const AGENT_020: Rule = {
     const results: RuleResult[] = [];
 
     for (const change of ctx.changes) {
-      if (isTestFile(change.file)) continue;
+      if (isTestFile(change.file) || isNonExecutable(change.file)) continue;
       const isWebhook = /webhook/i.test(change.file) || /webhook/i.test(change.added.map((l) => l.text).join('\n'));
       if (!isWebhook) continue;
 
@@ -537,7 +537,7 @@ const AGENT_021: Rule = {
     const results: RuleResult[] = [];
 
     for (const change of ctx.changes) {
-      if (isTestFile(change.file)) continue;
+      if (isTestFile(change.file) || isNonExecutable(change.file)) continue;
 
       const risky = change.added.filter((l) => {
         if (!LOG_CALL.test(l.text)) return false;

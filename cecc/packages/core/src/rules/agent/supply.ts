@@ -1,5 +1,5 @@
 import { findSegments } from '../../analyze/command.js';
-import { isConfigFile, isTestFile, matchAdded, searchableText } from '../../analyze/content.js';
+import { isConfigFile, isTestFile, matchAdded, searchableText , isNonExecutable} from '../../analyze/content.js';
 import { commandEvidence, lineEvidence, locations, type Rule, type RuleResult } from '../types.js';
 import { registerRules } from '../registry.js';
 
@@ -141,7 +141,20 @@ const AGENT_022: Rule = {
       }
 
       // Wildcard or git dependencies bypass version pinning entirely.
-      const loose = change.added.filter((l) => /"[^"]+"\s*:\s*"(?:\*|latest|git\+|https?:\/\/|file:)/.test(l.text));
+      //
+      // Restricted to lines that look like a dependency entry. Matching any
+      // "key": "https://..." pair also caught package.json's own repository
+      // url — found by running CECC against its own source.
+      const DEPENDENCY_SECTION = /"(?:dependencies|devDependencies|peerDependencies|optionalDependencies)"\s*:/;
+      const inDependencyBlock = change.added.some((l) => DEPENDENCY_SECTION.test(l.text)) ||
+        /"(?:dev|peer|optional)?[Dd]ependencies"\s*:/.test(searchableText(change));
+      const loose = inDependencyBlock
+        ? change.added.filter(
+            (l) =>
+              /^\s*"[@a-z0-9][^"]*"\s*:\s*"(?:\*|latest|git\+|https?:\/\/|file:)/.test(l.text) &&
+              !/"(?:name|version|repository|homepage|bugs|url|author|license)"/.test(l.text),
+          )
+        : [];
       if (loose.length > 0) {
         results.push({
           title: 'Unpinned or non-registry dependency added',
@@ -232,7 +245,7 @@ const AGENT_026: Rule = {
     const results: RuleResult[] = [];
 
     for (const change of ctx.changes) {
-      if (isTestFile(change.file) || change.isDeletion) continue;
+      if (isTestFile(change.file) || isNonExecutable(change.file) || change.isDeletion) continue;
 
       for (const risk of CONFIG_RISKS) {
         const lines = matchAdded(change, risk.pattern);
@@ -345,8 +358,11 @@ const AGENT_025: Rule = {
 const INJECTION_IMPERATIVE =
   /\b(?:ignore|disregard|forget|override|bypass|skip)\s+(?:\w+\s+){0,4}(?:instructions?|rules?|prompts?|guidelines?|directives?|constraints?|policies|policy|restrictions?|system\s+prompt)\b/i;
 
+// `agent` must not match a rule identifier such as AGENT-004: any file that
+// merely discusses these rules would otherwise read as prompt injection.
+// Found by running CECC against its own source.
 const AGENT_DIRECTED =
-  /\b(?:you\s+(?:are|must|should|will|need\s+to)|as\s+an?\s+AI|assistant|claude|chatgpt|gpt|copilot|cursor|llm|language\s+model|agent)\b/i;
+  /\b(?:you\s+(?:are|must|should|will|need\s+to)|as\s+an?\s+AI|assistant|claude|chatgpt|copilot|cursor|llm|language\s+model|agent(?!-\d)|ai\s+agent)\b/i;
 
 const HARMFUL_ACTION: Array<{ pattern: RegExp; label: string }> = [
   { pattern: /\b(?:exfiltrat|upload|send|post|transmit|leak|email)\b[\s\S]{0,60}?(?:\.env\b|\b(?:secret|credential|api[ _-]?key|token|source\s+code|password|database)\b)/i, label: 'exfiltrate secrets or source' },

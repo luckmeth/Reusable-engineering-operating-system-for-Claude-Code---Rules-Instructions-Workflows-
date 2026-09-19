@@ -1,4 +1,4 @@
-import { isMigrationFile, isTestFile, matchAdded, searchableText, trulyRemoved } from '../../analyze/content.js';
+import { isMigrationFile, isTestFile, matchAdded, searchableText, trulyRemoved , isNonExecutable} from '../../analyze/content.js';
 import { lineEvidence, locations, type Rule, type RuleResult } from '../types.js';
 import { registerRules } from '../registry.js';
 
@@ -34,14 +34,15 @@ const AGENT_008: Rule = {
 
   matches(ctx) {
     if (!ctx.project.stack.hasSupabase && ctx.project.stack.database !== 'postgres') return false;
-    return ctx.changes.some((c) => isMigrationFile(c.file));
+    return ctx.changes.some((c) => isMigrationFile(c.file) && !isNonExecutable(c.file));
   },
 
   evaluate(ctx): RuleResult[] {
     const results: RuleResult[] = [];
 
     for (const change of ctx.changes) {
-      if (!isMigrationFile(change.file)) continue;
+      // A README inside migrations/ documents SQL; it does not run it.
+      if (!isMigrationFile(change.file) || isNonExecutable(change.file)) continue;
       const sql = searchableText(change);
 
       // --- tables created without RLS in the same migration
@@ -172,7 +173,7 @@ const AGENT_009: Rule = {
     const results: RuleResult[] = [];
 
     for (const change of ctx.changes) {
-      if (isTestFile(change.file) || change.isDeletion) continue;
+      if (isTestFile(change.file) || isNonExecutable(change.file) || change.isDeletion) continue;
 
       const risky = change.added.filter((l) => {
         if (!CLIENT_TRUSTED.test(l.text)) return false;

@@ -1,4 +1,4 @@
-import { isTestFile, trulyRemoved } from '../../analyze/content.js';
+import { isNonExecutable, isPatternDefinition, isProseString, isTestFile, trulyRemoved } from '../../analyze/content.js';
 import { lineEvidence, locations, type Rule, type RuleResult } from '../types.js';
 import { registerRules } from '../registry.js';
 import type { ChangedLine, ContentChange } from '../../types/event.js';
@@ -81,14 +81,14 @@ const AGENT_003: Rule = {
     'Fix the code the test is describing. If the test itself encodes the wrong expectation, change it in a separate commit that states why the expected behaviour changed.',
 
   matches(ctx) {
-    return ctx.changes.some((c) => isTestFile(c.file));
+    return ctx.changes.some((c) => isTestFile(c.file) && !isNonExecutable(c.file));
   },
 
   evaluate(ctx): RuleResult[] {
     const results: RuleResult[] = [];
 
     for (const change of ctx.changes) {
-      if (!isTestFile(change.file)) continue;
+      if (!isTestFile(change.file) || isNonExecutable(change.file)) continue;
 
       // --- whole test file deleted
       if (change.isDeletion) {
@@ -325,9 +325,11 @@ function findChangedExpectations(change: ContentChange): ChangedExpectation[] {
 const EMPTY_CATCH = /catch\s*(?:\([^)]*\))?\s*\{\s*\}/;
 const CATCH_SWALLOW = /catch\s*(?:\([^)]*\))?\s*\{\s*(?:\/\/[^\n]*|\/\*[\s\S]*?\*\/)?\s*\}/;
 const PROMISE_SWALLOW = /\.catch\s*\(\s*(?:\(\s*\)|\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{?\s*\}?\s*\)/;
-const TS_IGNORE = /@ts-ignore/;
-const TS_EXPECT_ERROR = /@ts-expect-error/;
-const ESLINT_DISABLE = /eslint-disable(?:-next-line|-line)?\s*(?<rules>[^\n*]*)/;
+// Anchored to the start of a comment: `// @ts-ignore` is a directive, while
+// a sentence mentioning @ts-ignore is documentation about one.
+const TS_IGNORE = /(?:^|\s)(?:\/\/|\/\*|\*)\s*@ts-ignore\b/;
+const TS_EXPECT_ERROR = /(?:^|\s)(?:\/\/|\/\*|\*)\s*@ts-expect-error\b/;
+const ESLINT_DISABLE = /(?:^|\s)(?:\/\/|\/\*|\*)\s*eslint-disable(?:-next-line|-line)?\b(?<rules>[^\n*]*)/;
 const UNSAFE_CAST = /\bas\s+any\b|\bas\s+unknown\s+as\b|<any>/;
 const STRICT_OFF = /"(?:strict|strictNullChecks|noImplicitAny|strictFunctionTypes)"\s*:\s*false/;
 
@@ -357,10 +359,16 @@ const AGENT_004: Rule = {
     const results: RuleResult[] = [];
 
     for (const change of ctx.changes) {
-      if (change.isDeletion) continue;
+      // Documentation showing what a bad pattern looks like is not that pattern.
+      if (change.isDeletion || isNonExecutable(change.file)) continue;
+
+      // This rule filters `added` directly rather than through matchAdded, so
+      // it applies the same guards explicitly: a line defining `/@ts-ignore/`
+      // as a pattern is not a suppression, and neither is prose describing one.
+      const lines = change.added.filter((l) => !isPatternDefinition(l.text) && !isProseString(l.text));
 
       // --- swallowed exceptions
-      const swallowed = change.added.filter((l) => EMPTY_CATCH.test(l.text) || CATCH_SWALLOW.test(l.text) || PROMISE_SWALLOW.test(l.text));
+      const swallowed = lines.filter((l) => EMPTY_CATCH.test(l.text) || CATCH_SWALLOW.test(l.text) || PROMISE_SWALLOW.test(l.text));
       if (swallowed.length > 0) {
         results.push({
           title: `Error swallowed without handling in ${change.file}`,
@@ -379,10 +387,10 @@ const AGENT_004: Rule = {
       }
 
       // --- type checking suppressed
-      const tsIgnores = change.added.filter((l) => TS_IGNORE.test(l.text));
+      const tsIgnores = lines.filter((l) => TS_IGNORE.test(l.text));
       // A suppression carrying a written explanation is a documented decision rather
       // than a shortcut, so only bare directives with no stated reason are reported.
-      const bareExpectErrors = change.added.filter(
+      const bareExpectErrors = lines.filter(
         (l) => TS_EXPECT_ERROR.test(l.text) && l.text.replace(/.*@ts-expect-error/, '').trim().length < 8,
       );
       if (tsIgnores.length > 0 || bareExpectErrors.length > 0) {
@@ -405,7 +413,7 @@ const AGENT_004: Rule = {
       }
 
       // --- lint suppressed, weighted by what was suppressed
-      const eslintDisables = change.added.filter((l) => ESLINT_DISABLE.test(l.text));
+      const eslintDisables = lines.filter((l) => ESLINT_DISABLE.test(l.text));
       if (eslintDisables.length > 0) {
         const securityRules = eslintDisables.filter((l) => SECURITY_LINT_RULE.test(l.text));
         const blanket = eslintDisables.filter((l) => /eslint-disable\s*(?:\*\/|$)/.test(l.text));
@@ -433,7 +441,7 @@ const AGENT_004: Rule = {
       }
 
       // --- types asserted away
-      const casts = change.added.filter((l) => UNSAFE_CAST.test(l.text));
+      const casts = lines.filter((l) => UNSAFE_CAST.test(l.text));
       if (casts.length > 0) {
         results.push({
           title: `Unsafe type assertion in ${change.file}`,
@@ -452,7 +460,7 @@ const AGENT_004: Rule = {
       }
 
       // --- compiler strictness reduced
-      const strictOff = change.added.filter((l) => STRICT_OFF.test(l.text));
+      const strictOff = lines.filter((l) => STRICT_OFF.test(l.text));
       if (strictOff.length > 0) {
         results.push({
           title: 'TypeScript strictness reduced',

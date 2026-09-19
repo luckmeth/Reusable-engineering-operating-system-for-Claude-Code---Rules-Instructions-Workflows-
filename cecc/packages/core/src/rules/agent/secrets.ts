@@ -42,18 +42,24 @@ const AGENT_006: Rule = {
       for (const line of change.added) {
         const found = detectSecrets(line.text);
         for (const secret of found) {
-          // Low-confidence generic matches in tests are usually fixtures.
+          // Low-confidence generic matches in tests are almost always fixtures.
           if (isTestFile(change.file) && secret.confidence < 0.9) continue;
 
-          const severity: Rule['severity'] = secret.privileged ? 'critical' : secret.confidence > 0.9 ? 'high' : 'medium';
+          const inTestFile = isTestFile(change.file);
+          let severity: Rule['severity'] = secret.privileged ? 'critical' : secret.confidence > 0.9 ? 'high' : 'medium';
+          // Test files are still reported — real breaches have come from
+          // fixtures holding live keys — but a fixture is the likelier
+          // explanation, so the finding is graded accordingly rather than
+          // competing with genuine production leaks for attention.
+          if (inTestFile) severity = secret.privileged ? 'high' : 'medium';
 
           results.push({
             title: isTemplate
               ? `Real value in template file ${change.file}: ${secret.label}`
               : `${secret.label} hardcoded in ${change.file}`,
             severity: isTemplate ? 'high' : severity,
-            confidence: secret.confidence,
-            verification: secret.confidence >= 0.9 ? 'VERIFIED' : 'LIKELY',
+            confidence: inTestFile ? Math.min(secret.confidence, 0.6) : secret.confidence,
+            verification: inTestFile ? 'POTENTIAL' : secret.confidence >= 0.9 ? 'VERIFIED' : 'LIKELY',
             affectedFiles: [change.file],
             affectedLines: line.line !== null ? [{ file: change.file, line: line.line }] : [],
             evidence: [
@@ -70,7 +76,9 @@ const AGENT_006: Rule = {
             impact:
               (isTemplate
                 ? 'A template file is committed by design and read by everyone with repository access. '
-                : 'Anyone with repository access, now or later, has this credential. ') +
+                : inTestFile
+                  ? 'This is in a test file, so it is most likely a fixture — but test files are committed like any other, and real breaches have come from fixtures holding live keys. '
+                  : 'Anyone with repository access, now or later, has this credential. ') +
               (secret.privileged
                 ? 'This credential type carries broad privileges, so the blast radius is the whole service it authenticates to.'
                 : 'Treat it as compromised from the moment it was committed.'),

@@ -1,4 +1,4 @@
-import { isTestFile, matchAdded, searchableText } from '../../analyze/content.js';
+import { isTestFile, matchAdded, searchableText , isNonExecutable} from '../../analyze/content.js';
 import { lineEvidence, locations, type Rule, type RuleResult } from '../types.js';
 import { registerRules } from '../registry.js';
 import type { ContentChange } from '../../types/event.js';
@@ -123,7 +123,7 @@ function buildSinkRule(spec: SinkRule): Rule {
       const results: RuleResult[] = [];
 
       for (const change of ctx.changes) {
-        if (isTestFile(change.file) || change.isDeletion) continue;
+        if (isTestFile(change.file) || isNonExecutable(change.file) || change.isDeletion) continue;
 
         const sinkLines = matchAdded(change, spec.sink);
         if (sinkLines.length === 0) continue;
@@ -201,7 +201,7 @@ const AGENT_015: Rule = {
     const results: RuleResult[] = [];
 
     for (const change of ctx.changes) {
-      if (isTestFile(change.file) || change.isDeletion) continue;
+      if (isTestFile(change.file) || isNonExecutable(change.file) || change.isDeletion) continue;
       const text = searchableText(change);
       const handlesUpload =
         /multer|formidable|busboy|multipart|\.upload\(|putObject|createSignedUploadUrl|originalname|originalFilename/i.test(text) ||
@@ -327,7 +327,7 @@ const AGENT_017: Rule = {
     const results: RuleResult[] = [];
 
     for (const change of ctx.changes) {
-      if (isTestFile(change.file) || change.isDeletion) continue;
+      if (isTestFile(change.file) || isNonExecutable(change.file) || change.isDeletion) continue;
 
       for (const issue of CRYPTO_ISSUES) {
         const lines = matchAdded(change, issue.pattern).filter((l) => {
