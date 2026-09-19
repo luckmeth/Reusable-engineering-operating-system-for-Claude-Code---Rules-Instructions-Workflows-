@@ -5,6 +5,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // The desktop build ships this server inside Electron, which has no install
+  // step. Standalone output emits the server plus exactly the node_modules it
+  // traced, so the packaged application carries no dev dependencies.
+  output: 'standalone',
   // @cecc/core is a workspace package shipped as compiled ESM.
   transpilePackages: ['@cecc/core'],
   // node:sqlite is resolved by Node at runtime through createRequire; the

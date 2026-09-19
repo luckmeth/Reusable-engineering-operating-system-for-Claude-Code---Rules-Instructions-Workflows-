@@ -17,7 +17,15 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --ext .ts,.tsx",
-    "dashboard": "npm run dev -w @cecc/dashboard"
+    "dashboard": "npm run dev -w @cecc/dashboard",
+    "build:dashboard": "npm run build -w @cecc/dashboard",
+    "icons": "node scripts/make-icons.mjs",
+    "stage:desktop": "node scripts/stage-desktop.mjs",
+    "desktop": "npm run build && npm run build:dashboard && npm run icons && npm run stage:desktop",
+    "desktop:start": "npm run desktop && npm run start -w cecc-desktop",
+    "desktop:linux": "npm run desktop && npm run dist:linux -w cecc-desktop",
+    "desktop:win": "npm run desktop && npm run dist:win -w cecc-desktop",
+    "desktop:mac": "npm run desktop && npm run dist:mac -w cecc-desktop"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
