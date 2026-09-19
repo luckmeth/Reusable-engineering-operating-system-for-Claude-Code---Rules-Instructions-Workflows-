@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { claudeCodeAdapter, ingest, parseCommand, redact } from '../src/index.js';
 import { fixture, tempStore } from './helpers.js';
@@ -103,14 +104,22 @@ describe('adapter robustness', () => {
 
   it('keeps a path outside the project absolute rather than silently rewriting it', () => {
     // An agent reaching outside the repository is information, not noise to hide.
+    // The property under test is that the path stays absolute and stays outside
+    // the project — not that it is spelled with forward slashes. Asserting the
+    // POSIX string made this fail on Windows for a correct result.
+    const outside = process.platform === 'win32' ? 'C:\\Windows\\System32\\drivers\\etc\\hosts' : '/etc/passwd';
     const result = run({
       session_id: 's',
       hook_event_name: 'PreToolUse',
       tool_name: 'Read',
-      tool_input: { file_path: '/etc/passwd' },
+      tool_input: { file_path: outside },
       cwd: ctx.dir,
     });
-    expect(result.events[0]?.filePaths[0]).toBe('/etc/passwd');
+
+    const recorded = result.events[0]?.filePaths[0] ?? '';
+    expect(isAbsolute(recorded)).toBe(true);
+    expect(recorded.startsWith(ctx.dir)).toBe(false);
+    expect(recorded.toLowerCase()).toContain('etc');
   });
 
   it('does not open the transcript, only notes that one exists', () => {

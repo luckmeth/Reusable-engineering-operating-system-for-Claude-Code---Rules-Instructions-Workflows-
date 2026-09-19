@@ -101,6 +101,12 @@ const touchesSecurityCode = (e: CeccEvent): boolean => {
 
 const isFileWrite = (e: CeccEvent): boolean => e.type === 'file.modified' || e.type === 'file.created';
 
+/** Reads one string field out of an event's metadata bag. */
+const readMetadata = (e: CeccEvent, key: string): string | null => {
+  const value = (e.metadata as Record<string, unknown> | null)?.[key];
+  return typeof value === 'string' ? value : null;
+};
+
 /** Did this event carry a finding from a test-manipulation rule? */
 const weakensTests = (e: CeccEvent): boolean => e.findingRuleIds.includes('AGENT-003');
 
@@ -450,6 +456,117 @@ const SECRET_THEN_COMMIT: Pattern = {
   },
 };
 
+
+/**
+ * CORR-007 — the same file read repeatedly with nothing written to it between.
+ *
+ * Re-reading a file that has not changed returns bytes the agent already has.
+ * It is the most common form of context waste and, unlike most of them, it is
+ * cheaply detectable: the read events and the write events are both recorded,
+ * so "unchanged since the last read" is a fact rather than an inference.
+ *
+ * Graded `info`, and never above it. This is a cost observation, not a defect,
+ * and a tool that shouts about efficiency next to a cross-tenant leak teaches
+ * people to skim both.
+ */
+const REPEATED_UNCHANGED_READ: Pattern = {
+  id: 'CORR-007',
+  name: 'Same unchanged file read repeatedly',
+
+  detect(ctx): CorrelationMatch[] {
+    const { window, trigger } = ctx;
+    if (trigger.type !== 'file.read') return [];
+
+    const file = trigger.filePaths[0];
+    if (!file) return [];
+
+    const reads = window.filter((e) => e.type === 'file.read' && e.filePaths.includes(file));
+    if (reads.length < 3) return [];
+
+    // Any write to the file resets the count: re-reading after an edit is
+    // correct behaviour, not waste.
+    const firstRead = reads[0]!;
+    const writesBetween = window.filter(
+      (e) => e.seq > firstRead.seq && e.seq <= trigger.seq && isFileWrite(e) && e.filePaths.includes(file),
+    );
+    if (writesBetween.length > 0) return [];
+
+    return [
+      {
+        patternId: 'CORR-007',
+        title: `${file} was read ${reads.length} times without changing`,
+        severity: 'info',
+        confidence: 0.85,
+        chain: reads,
+        category: 'QUALITY',
+        layer: 'AGENT',
+        affectedFiles: [file],
+        evidence: [
+          chainEvidence(reads, 'Reads of the same file'),
+          { kind: 'correlation', label: 'Writes to it in between', detail: '0' },
+        ],
+        impact:
+          `The same unchanged file entered the context ${reads.length} times. Each read costs tokens and displaces ` +
+          'earlier context, which is how a long session starts forgetting what it established at the beginning.',
+        recommendation:
+          'Re-read a file only after it changes. When only part of it is needed, read that range rather than the whole file.',
+      },
+    ];
+  },
+};
+
+/**
+ * CORR-008 — the same repository-wide search run repeatedly.
+ *
+ * A search that has already been run against an unchanged tree returns the same
+ * results. Repeating it means the earlier answer was not used — usually because
+ * it scrolled out of context, which is the same problem CORR-007 describes from
+ * the other end.
+ */
+const REPEATED_SEARCH: Pattern = {
+  id: 'CORR-008',
+  name: 'Identical search repeated over an unchanged tree',
+
+  detect(ctx): CorrelationMatch[] {
+    const { window, trigger } = ctx;
+    if (trigger.type !== 'command.completed' || !trigger.command) return [];
+    if (readMetadata(trigger, 'intent') !== 'search') return [];
+
+    const same = window.filter(
+      (e) => e.type === 'command.completed' && e.command === trigger.command && readMetadata(e, 'intent') === 'search',
+    );
+    if (same.length < 3) return [];
+
+    const first = same[0]!;
+    const writesBetween = window.filter((e) => e.seq > first.seq && e.seq <= trigger.seq && isFileWrite(e));
+    if (writesBetween.length > 0) return [];
+
+    return [
+      {
+        patternId: 'CORR-008',
+        title: `The same search ran ${same.length} times with no file changes in between`,
+        severity: 'info',
+        confidence: 0.8,
+        chain: same,
+        category: 'QUALITY',
+        layer: 'AGENT',
+        affectedFiles: [],
+        evidence: [
+          chainEvidence(same, 'Repeated searches'),
+          { kind: 'command', label: 'Search', detail: trigger.command },
+          { kind: 'correlation', label: 'File changes between searches', detail: '0' },
+        ],
+        impact:
+          'An identical search over an unchanged tree cannot return anything new. Repeating it spends tokens to ' +
+          'recover an answer the session already had.',
+        recommendation:
+          'Record what the search found — in a note, a task, or the code itself — rather than re-running it. If the search keeps ' +
+          'being needed, the thing it finds probably belongs in the project documentation.',
+      },
+    ];
+  },
+};
+
 const PATTERNS: Pattern[] = [
   TEST_WEAKENED_AFTER_FAILURE,
   VALIDATION_THEN_QUERY,
@@ -457,6 +574,8 @@ const PATTERNS: Pattern[] = [
   REMOVAL_THEN_BYPASS,
   REPEATED_FAILURE,
   SECRET_THEN_COMMIT,
+  REPEATED_UNCHANGED_READ,
+  REPEATED_SEARCH,
 ];
 
 export interface CorrelationResult {

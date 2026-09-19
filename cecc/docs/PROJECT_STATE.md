@@ -27,7 +27,8 @@ No daemon. Hooks write, CLI and dashboard read, SQLite WAL mediates.
   `service_role` identified by decoding the JWT payload.
 - 31 rules across APPLICATION, AGENT and CECC layers (28 agent rules plus three
   external-scanner rule ids).
-- 6 correlation patterns; CORR-001 (test weakened after failure) is the flagship.
+- 8 correlation patterns; CORR-001 (test weakened after failure) is the flagship,
+  CORR-007 and CORR-008 cover token efficiency.
 - Workflow inference from evidence with human pin/unpin override.
 - Completion gates where `pending` blocks as firmly as `fail`.
 - Policy engine: observe/warn/block, integrity-checksummed policy file.
@@ -109,7 +110,6 @@ Taken on this repository (162 scannable files, 417 events):
 - AI-assisted analysis for cases deterministic rules cannot resolve. Deliberate:
   it would add a network dependency and a non-reproducible verdict to a tool
   whose value is that every claim is traceable.
-- Token-efficiency metrics beyond CORR-005 (repeated failed commands).
 - macOS packaging is configured but has never been built or launched.
 
 ## Architecture decisions

@@ -124,7 +124,7 @@ from an ordinary scanner.
 | **Agent** | Did the coding agent take a dangerous shortcut? |
 | **CECC** | Is something attacking the monitoring system itself? |
 
-28 detection rules and 6 correlation patterns. `cecc rules` lists them all.
+28 detection rules and 8 correlation patterns. `cecc rules` lists them all.
 
 ---
 
@@ -185,7 +185,7 @@ become a second place to steal credentials from. See [docs/PRIVACY.md](docs/PRIV
 Working software. 236 tests pass, including adversarial tests that treat CECC as
 the target.
 
-**Implemented:** event model with integrity chain · 31 rules · 6 correlation
+**Implemented:** event model with integrity chain · 31 rules · 8 correlation
 patterns · workflow inference and gates · policy engine · Claude Code adapter
 with live-verified blocking · external scanners (npm audit, OSV, Semgrep) ·
 task ingestion · opt-in cloud sync · local ML triage · CLI · dashboard ·

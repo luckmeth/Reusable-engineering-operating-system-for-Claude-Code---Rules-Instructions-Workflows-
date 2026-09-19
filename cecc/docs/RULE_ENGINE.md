@@ -116,6 +116,12 @@ hides?"
 | CORR-004 | Security control removed → committed with hooks skipped |
 | CORR-005 | Identical command failed repeatedly with no file changes between |
 | CORR-006 | Credential introduced → committed |
+| CORR-007 | Same unchanged file read three or more times |
+| CORR-008 | Identical search repeated over an unchanged tree |
+
+CORR-007 and CORR-008 are the token-efficiency pair, and both are graded `info`
+and never above it. They describe cost, not a defect. A tool that shouts about
+context waste next to a cross-tenant leak teaches people to skim both.
 
 CORR-001 is the flagship. Each step is individually defensible: code changed, a
 test failed, a test was updated, the suite went green. Only the sequence shows

@@ -275,6 +275,66 @@ describe('correlation engine', () => {
     expect(result.findings.some((f) => f.ruleId === 'CORR-005')).toBe(false);
   });
 
+  it('CORR-007: reports the same unchanged file read three times', () => {
+    const window = [1, 2, 3].map((n) => push({ type: 'file.read', tool: 'Read', filePaths: ['src/lib/auth.ts'] }, n));
+    const result = runCorrelations({ project: ctx.project, store: ctx.store, window, trigger: window[2]! });
+
+    const match = result.findings.find((f) => f.ruleId === 'CORR-007');
+    expect(match).toBeDefined();
+    // Cost, not a defect. Grading it higher would teach people to skim findings.
+    expect(match?.severity).toBe('info');
+    expect(match?.title).toContain('src/lib/auth.ts');
+  });
+
+  it('CORR-007: stays quiet when the file was written between reads', () => {
+    const window = [
+      push({ type: 'file.read', tool: 'Read', filePaths: ['src/lib/auth.ts'] }, 1),
+      push({ type: 'file.modified', filePaths: ['src/lib/auth.ts'] }, 2),
+      push({ type: 'file.read', tool: 'Read', filePaths: ['src/lib/auth.ts'] }, 3),
+      push({ type: 'file.read', tool: 'Read', filePaths: ['src/lib/auth.ts'] }, 4),
+    ];
+    const result = runCorrelations({ project: ctx.project, store: ctx.store, window, trigger: window[3]! });
+    expect(result.findings.some((f) => f.ruleId === 'CORR-007')).toBe(false);
+  });
+
+  it('CORR-007: does not confuse reads of different files', () => {
+    const window = [
+      push({ type: 'file.read', tool: 'Read', filePaths: ['a.ts'] }, 1),
+      push({ type: 'file.read', tool: 'Read', filePaths: ['b.ts'] }, 2),
+      push({ type: 'file.read', tool: 'Read', filePaths: ['c.ts'] }, 3),
+    ];
+    const result = runCorrelations({ project: ctx.project, store: ctx.store, window, trigger: window[2]! });
+    expect(result.findings.some((f) => f.ruleId === 'CORR-007')).toBe(false);
+  });
+
+  it('CORR-008: reports an identical search repeated over an unchanged tree', () => {
+    const window = [1, 2, 3].map((n) =>
+      push({ type: 'command.completed', tool: 'Grep', command: 'grep createInvoice', metadata: { intent: 'search' } }, n),
+    );
+    const result = runCorrelations({ project: ctx.project, store: ctx.store, window, trigger: window[2]! });
+
+    const match = result.findings.find((f) => f.ruleId === 'CORR-008');
+    expect(match).toBeDefined();
+    expect(match?.severity).toBe('info');
+  });
+
+  it('CORR-008: stays quiet once a file changed between searches', () => {
+    const window = [
+      push({ type: 'command.completed', tool: 'Grep', command: 'grep createInvoice', metadata: { intent: 'search' } }, 1),
+      push({ type: 'command.completed', tool: 'Grep', command: 'grep createInvoice', metadata: { intent: 'search' } }, 2),
+      push({ type: 'file.modified', filePaths: ['src/invoice.ts'] }, 3),
+      push({ type: 'command.completed', tool: 'Grep', command: 'grep createInvoice', metadata: { intent: 'search' } }, 4),
+    ];
+    const result = runCorrelations({ project: ctx.project, store: ctx.store, window, trigger: window[3]! });
+    expect(result.findings.some((f) => f.ruleId === 'CORR-008')).toBe(false);
+  });
+
+  it('CORR-008: ignores a repeated command that is not a search', () => {
+    const window = [1, 2, 3].map((n) => push({ type: 'command.completed', command: 'npm run build' }, n));
+    const result = runCorrelations({ project: ctx.project, store: ctx.store, window, trigger: window[2]! });
+    expect(result.findings.some((f) => f.ruleId === 'CORR-008')).toBe(false);
+  });
+
   it('CORR-006: escalates a secret that reached a commit', () => {
     const window = [
       push({ type: 'file.modified', filePaths: ['src/config.ts'], findingRuleIds: ['AGENT-006'] }, 1),
