@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   Store,
   ceccPaths,
@@ -109,11 +110,8 @@ interface HookInstallResult {
 export function installHooks(root: string): HookInstallResult {
   const messages: string[] = [];
   const settingsPath = join(root, '.claude', 'settings.json');
-  const hookEntry = `node "${join(root, 'node_modules', '@cecc', 'cli', 'dist', 'hook.js')}"`;
-
-  // Prefer a path that survives being run from a subdirectory.
-  const localHook = join(root, 'cecc', 'packages', 'cli', 'dist', 'hook.js');
-  const command = existsSync(localHook) ? `node "${localHook}"` : hookEntry;
+  const hookPath = resolveHookPath(root);
+  const command = `node "${hookPath}"`;
 
   const events = ['SessionStart', 'SessionEnd', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Stop'];
 
@@ -148,11 +146,38 @@ export function installHooks(root: string): HookInstallResult {
     }
     messages.push(c.gray(`  Command: ${command}`));
     messages.push(c.gray(`  Events:  ${events.join(', ')}`));
-    messages.push(c.gray('  Run `npm run build` in cecc/ before the hooks can execute.'));
+    if (!existsSync(hookPath)) {
+      // Saying "registered" while pointing at a file that does not exist is the
+      // kind of false success CECC exists to catch. Say it plainly instead.
+      messages.push(`${c.yellow('!')} ${relative(root, hookPath)} does not exist yet — build the CLI before hooks can run.`);
+    }
     return { messages, installed: true };
   } catch (err) {
     messages.push(`${c.yellow('!')} Could not write .claude/settings.json: ${err instanceof Error ? err.message : String(err)}`);
     messages.push(c.gray('  Add the hook manually — see docs/CLAUDE_CODE_INTEGRATION.md'));
     return { messages, installed: false };
   }
+}
+
+/**
+ * Picks the hook command written into `.claude/settings.json`.
+ *
+ * The order matters. A project that vendors CECC as a workspace, or installs it
+ * as a dependency, should keep using its own copy so the hook version tracks
+ * the project. Anything else — a global install, the desktop application, an
+ * `npx` invocation — has no copy inside the project, and the only correct
+ * answer is the CLI that is running right now. Writing a node_modules path that
+ * does not exist produces hooks that silently never fire, which is worse than
+ * no hooks at all because the dashboard still looks installed.
+ */
+export function resolveHookPath(root: string): string {
+  const candidates = [
+    join(root, 'cecc', 'packages', 'cli', 'dist', 'hook.js'),
+    join(root, 'node_modules', '@cecc', 'cli', 'dist', 'hook.js'),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  // dist/commands/init.js -> dist/hook.js
+  return join(dirname(dirname(fileURLToPath(import.meta.url))), 'hook.js');
 }
