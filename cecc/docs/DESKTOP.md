@@ -110,6 +110,20 @@ Wine and cross-builds cleanly. Nothing produced by CI is code-signed; signing
 needs certificates the workflow does not have, and an installer that claimed a
 publisher it could not prove would be worse than an unsigned one.
 
+Two things the workflow has to work around, both worth knowing if you fork it:
+
+- **Windows MAX_PATH.** This repository's name is 85 characters and the runner
+  puts it in the checkout path twice, which pushes app-builder-lib's NSIS
+  includes past 260 characters and fails the build with `!include: could not
+  open file`. `makensis` is a legacy binary that ignores long-path support, so
+  the workflow builds through a junction at `D:\w` rather than changing a
+  setting.
+- **Auto-publish.** electron-builder publishes to GitHub Releases on its own
+  when it sees CI and a `repository` field, and then fails for want of a token
+  *after* building every artifact. Every `dist:*` script passes
+  `--publish never`; releasing is a deliberate act, not a side effect of a
+  build.
+
 If a build host cannot download Electron (some proxies cut the download
 mid-transfer), seed the cache with curl first:
 
