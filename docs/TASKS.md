@@ -1,0 +1,34 @@
+# Tasks
+
+> **Template.** Keep tasks actionable and specific. A task nobody can start from
+> the text alone is a note, not a task.
+
+## Current
+
+- [ ] Add `webhook_events` idempotency table and gate PayHere processing on it
+      — `supabase/migrations/`, `src/app/api/webhooks/payhere/route.ts`
+
+## Next
+
+- [ ] Rate limit `/api/auth/login` and `/api/auth/reset` (keyed by IP + identifier)
+- [ ] Bound email retries at 5 attempts with exponential backoff + dead-letter state
+- [ ] Integration test: replayed webhook is a no-op
+
+## Blocked
+
+- [ ] Production domain on Cloudflare — waiting on registrar transfer
+      **Unblocker:** client completes the transfer approval
+
+## Backlog
+
+_Discovered out of scope. Do not silently expand a task to include these._
+
+- [ ] Replace `offset` pagination on `/api/invoices` with keyset (slow past ~10k rows)
+- [ ] `customers.email` should be `unique (tenant_id, lower(email))`
+- [ ] Audit log for admin actions
+
+## Done
+
+_Move items here with the date. Trim quarterly — this file is read every session._
+
+- [x] 2026-01-01 — RLS policies for all tenant tables
