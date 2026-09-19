@@ -39,10 +39,17 @@ export function FindingItem({
   const { mode } = useViewMode();
   const plain = plainFor(finding.ruleId, finding.title);
   // Two findings from the same check share a headline, which makes a list read
-  // as if it is repeating itself. Naming the file distinguishes them without
-  // losing the plain-language framing.
+  // as if it is repeating itself. The file, and the line where one is known,
+  // separate them without losing the plain-language framing — and a line number
+  // is more useful than an arbitrary tiebreaker because it is where you go.
   const primaryFile = finding.affectedFiles[0]?.split('/').pop();
-  const headline = primaryFile ? `${plain.headline} — ${primaryFile}` : plain.headline;
+  const primaryLine = finding.affectedLines[0]?.line;
+  const locationLabel = primaryFile
+    ? primaryLine !== undefined
+      ? `${primaryFile}:${primaryLine}`
+      : primaryFile
+    : null;
+  const headline = locationLabel ? `${plain.headline} — ${locationLabel}` : plain.headline;
   const urgency = URGENCY[finding.severity] ?? URGENCY['medium']!;
 
   return (
@@ -58,6 +65,13 @@ export function FindingItem({
           <p className="text-sm font-medium leading-snug text-ink">
             {mode === 'plain' ? headline : finding.title}
           </p>
+
+          {/* Two findings can share a plain headline and a location — one line
+              can hold two different problems. The specific title is what tells
+              them apart, so it is kept as quiet context rather than omitted. */}
+          {mode === 'plain' && (
+            <p className="mt-0.5 truncate text-[11px] text-ink-faint">{finding.title}</p>
+          )}
 
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-ink-faint">
             {mode === 'plain' ? (
