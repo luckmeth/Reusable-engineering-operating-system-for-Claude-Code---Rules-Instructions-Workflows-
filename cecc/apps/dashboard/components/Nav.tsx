@@ -3,12 +3,16 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import { ViewModeToggle } from './ViewMode';
+
 const LINKS = [
   { href: '/', label: 'Overview' },
-  { href: '/workflow', label: 'Workflow' },
+  { href: '/findings', label: 'What needs fixing' },
   { href: '/activity', label: 'Live activity' },
-  { href: '/findings', label: 'Findings' },
-  { href: '/sessions', label: 'Sessions' },
+  { href: '/workflow', label: 'Progress' },
+  { href: '/sessions', label: 'History' },
+  { href: '/controls', label: 'Controls' },
+  { href: '/intelligence', label: 'Learning' },
 ];
 
 export function Nav({ projectName, environment }: { projectName: string; environment: string }) {
@@ -27,7 +31,7 @@ export function Nav({ projectName, environment }: { projectName: string; environ
           )}
         </div>
 
-        <nav className="flex items-center gap-1" aria-label="Main">
+        <nav className="flex flex-wrap items-center gap-1" aria-label="Main">
           {LINKS.map((link) => {
             const active = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href));
             return (
@@ -44,6 +48,10 @@ export function Nav({ projectName, environment }: { projectName: string; environ
             );
           })}
         </nav>
+
+        <div className="ml-auto">
+          <ViewModeToggle />
+        </div>
       </div>
     </header>
   );

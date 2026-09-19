@@ -1,4 +1,5 @@
 import 'server-only';
+import { loadModel, rankFindings, type TrainedModel, type TriageScore } from '@cecc/ml';
 import {
   Store,
   ceccPaths,
@@ -27,6 +28,8 @@ import {
 export interface DashboardContext {
   root: string;
   project: ProjectConfig;
+  /** Convenience alias — callers overwhelmingly want just the id. */
+  projectId: string;
   store: Store;
 }
 
@@ -60,7 +63,7 @@ export function openContext(): DashboardContext {
   const root = resolveRoot();
   const project = loadProjectConfig(root);
   if (!project) throw new NotInitializedError(root);
-  return { root, project, store: new Store(ceccPaths(root).db) };
+  return { root, project, projectId: project.id, store: new Store(ceccPaths(root).db) };
 }
 
 /** Runs `fn` with a store and always closes it, even on throw. */
@@ -71,6 +74,15 @@ export function withStore<T>(fn: (ctx: DashboardContext) => T): T {
   } finally {
     ctx.store.close();
   }
+}
+
+export interface TriageInfo {
+  /** Findings in the order the model suggests reading them. */
+  ordered: Finding[];
+  scores: Record<string, TriageScore>;
+  applied: boolean;
+  reason: string;
+  model: TrainedModel | null;
 }
 
 export interface OverviewData {
@@ -86,6 +98,7 @@ export interface OverviewData {
   eventCount: number;
   chain: ReturnType<Store['verifyEventChain']>;
   protectedTouched: string[];
+  triage: TriageInfo;
 }
 
 export function getOverview(): OverviewData {
@@ -102,12 +115,24 @@ export function getOverview(): OverviewData {
 
     const protectedTouched = [...new Set(events.flatMap((e) => e.filePaths))].filter((f) => isProtectedPath(policies, f));
 
+    // The model only reorders. It never creates, closes or re-grades a finding,
+    // and it declines entirely when it cannot beat chance on held-out data.
+    const model = loadModel(ceccPaths(root).dir);
+    const ranked = rankFindings(findings, model);
+
     return {
       project,
       root,
       session,
       run,
-      findings,
+      findings: ranked.ordered,
+      triage: {
+        ordered: ranked.ordered,
+        scores: Object.fromEntries(ranked.scores),
+        applied: ranked.applied,
+        reason: ranked.reason,
+        model,
+      },
       events,
       tests,
       tasks,

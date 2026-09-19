@@ -2,13 +2,18 @@
   "name": "cecc-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "Claude Engineering Control Center — local-first engineering observability, workflow, security and quality control for AI-assisted development.",
+  "description": "Claude Engineering Control Center \u2014 local-first engineering observability, workflow, security and quality control for AI-assisted development.",
   "license": "MIT",
-  "workspaces": ["packages/*", "apps/*"],
-  "engines": { "node": ">=22.5.0" },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
-    "build": "npm run build -w @cecc/core && npm run build -w @cecc/cli",
-    "typecheck": "tsc -b packages/core packages/cli",
+    "build": "npm run build -w @cecc/core && npm run build -w @cecc/ml && npm run build -w @cecc/cli",
+    "typecheck": "tsc -b packages/core packages/ml packages/cli",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --ext .ts,.tsx",

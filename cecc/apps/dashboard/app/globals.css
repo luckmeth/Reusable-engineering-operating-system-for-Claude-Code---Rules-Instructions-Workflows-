@@ -11,8 +11,8 @@ body {
   font-feature-settings: 'cv02', 'cv03', 'cv04';
 }
 
-/* Severity is the primary signal in this interface, so it gets a consistent
-   treatment everywhere rather than ad-hoc colours per component. */
+/* Severity gets one consistent treatment everywhere, so colour always carries
+   the same meaning rather than being decorative. */
 .sev-critical { @apply text-sev-critical border-sev-critical/40 bg-sev-critical/10; }
 .sev-high     { @apply text-sev-high     border-sev-high/40     bg-sev-high/10; }
 .sev-medium   { @apply text-sev-medium   border-sev-medium/40   bg-sev-medium/10; }
@@ -21,3 +21,107 @@ body {
 
 .card { @apply rounded-lg border border-surface-border bg-surface-raised; }
 .mono { @apply font-mono text-[13px]; }
+
+/* ---------------------------------------------------------------- motion
+   Animation here is functional, not decorative: it shows where new
+   information arrived, confirms an action was received, and makes a
+   disclosure feel like the same object opening rather than a new one.
+
+   Every animation is disabled under prefers-reduced-motion. Movement that
+   cannot be turned off is an accessibility failure, and a security dashboard
+   is exactly the kind of tool someone reads while stressed. */
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 currentColor; opacity: 0.55; }
+  70%  { box-shadow: 0 0 0 7px transparent; opacity: 0; }
+  100% { box-shadow: 0 0 0 0 transparent; opacity: 0; }
+}
+@keyframes sweep {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+@keyframes grow-bar {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+@keyframes check-draw {
+  from { stroke-dashoffset: 24; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.animate-rise     { animation: rise 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-slide-in { animation: slide-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-grow-bar { animation: grow-bar 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; transform-origin: left; }
+
+/* Staggered entrance so a list reads top-to-bottom instead of appearing at
+   once — it guides the eye to the most important item first. */
+.stagger > * { animation: rise 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.stagger > *:nth-child(3) { animation-delay: 0.10s; }
+.stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.stagger > *:nth-child(6) { animation-delay: 0.22s; }
+.stagger > *:nth-child(n + 7) { animation-delay: 0.26s; }
+
+/* A live indicator that actually indicates liveness. */
+.live-dot { position: relative; }
+.live-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  animation: pulse-ring 2s ease-out infinite;
+}
+
+/* Loading state for an action in flight. */
+.shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  background-size: 200% 100%;
+  animation: sweep 1.2s linear infinite;
+}
+
+.check-path {
+  stroke-dasharray: 24;
+  animation: check-draw 0.4s ease-out 0.1s both;
+}
+
+/* Disclosure that feels like one object opening. */
+details > summary { list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details[open] > .reveal { animation: rise 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+.lift {
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.18s ease, background-color 0.18s ease;
+}
+.lift:hover { transform: translateY(-1px); }
+
+.press { transition: transform 0.1s ease; }
+.press:active { transform: scale(0.97); }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .lift:hover { transform: none; }
+}
+
+/* Focus visible everywhere — this interface is operated under pressure and
+   must be fully keyboard-navigable. */
+:where(a, button, summary, input, select, textarea):focus-visible {
+  outline: 2px solid theme('colors.cecc');
+  outline-offset: 2px;
+  border-radius: 4px;
+}
