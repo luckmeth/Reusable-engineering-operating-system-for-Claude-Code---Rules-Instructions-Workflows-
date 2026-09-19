@@ -8,10 +8,20 @@ name: Desktop build
 # simpler and the only way the installer is ever actually executed before a
 # user does it.
 on:
+  # workflow_dispatch only appears once this file is on the default branch.
+  # Until then, a push that touches the desktop build is what runs it.
   workflow_dispatch:
   push:
     tags:
       - 'v*'
+    branches:
+      - 'claude/**'
+    paths:
+      - 'cecc/apps/desktop/**'
+      - 'cecc/scripts/**'
+      - 'cecc/apps/dashboard/**'
+      - 'cecc/packages/**'
+      - '.github/workflows/desktop.yml'
 
 jobs:
   build:
