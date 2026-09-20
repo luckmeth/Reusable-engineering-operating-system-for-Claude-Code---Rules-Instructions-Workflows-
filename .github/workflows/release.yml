@@ -18,14 +18,41 @@ on:
         type: string
 
 jobs:
+  # Runs before anything is built. A tag typed by hand can be malformed, and
+  # finding that out after three platforms have produced 846MB of installers
+  # wastes the whole build — which is exactly what happened the first time this
+  # workflow ran, on a leading space.
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Normalize and validate the tag
+        id: tag
+        env:
+          RAW_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          TAG="$(printf '%s' "$RAW_TAG" | tr -d '[:space:]')"
+
+          if ! printf '%s' "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$RAW_TAG' is not a version tag. Expected something like v0.1.0 or v1.2.3-rc.1."
+            exit 1
+          fi
+
+          echo "Releasing $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
   # Reuses the same matrix that builds on every desktop change, so a release is
   # built by the pipeline that has already been exercised rather than by a
   # second one that only runs on tag day.
   build:
+    needs: check
     uses: ./.github/workflows/desktop.yml
 
   publish:
-    needs: build
+    needs: [check, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -35,8 +62,6 @@ jobs:
       # was selected, and the tag is created from it below — so a release can be
       # cut entirely from the Actions tab, without a local clone.
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -45,7 +70,7 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag || github.ref_name }}
+          TAG: ${{ needs.check.outputs.tag }}
         run: |
           set -euo pipefail
 
@@ -67,7 +92,14 @@ jobs:
 
           # A manual run names a tag that may not exist yet. Create it at the
           # commit that was just built, so the release points at the code in it.
-          if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+          #
+          # The check goes to the remote, not the local clone: the clone predates
+          # this step, so a tag created by an earlier attempt is absent locally
+          # and present remotely, and a re-run would try to create it again and
+          # fail with "Reference already exists".
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists on the remote — releasing from it."
+          else
             echo "Creating tag $TAG at $GITHUB_SHA"
             gh api "repos/$GITHUB_REPOSITORY/git/refs" \
               -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" >/dev/null
