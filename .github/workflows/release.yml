@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to release (e.g. v0.1.0)'
+        description: 'Version tag to release, e.g. v0.1.0. Created if it does not exist.'
         required: true
         type: string
 
@@ -31,9 +31,12 @@ jobs:
       contents: write
 
     steps:
+      # For a tag push this is the tag. For a manual run it is whichever branch
+      # was selected, and the tag is created from it below — so a release can be
+      # cut entirely from the Actions tab, without a local clone.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -60,6 +63,14 @@ jobs:
           if [ -z "$(ls -A dist)" ]; then
             echo "::error::No build artifacts were produced — refusing to publish an empty release."
             exit 1
+          fi
+
+          # A manual run names a tag that may not exist yet. Create it at the
+          # commit that was just built, so the release points at the code in it.
+          if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Creating tag $TAG at $GITHUB_SHA"
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" >/dev/null
           fi
 
           cat > notes.md <<'NOTES'
@@ -90,8 +101,20 @@ jobs:
           macOS build has never been launched on a Mac.
           NOTES
 
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "CECC $TAG" \
-            --notes-file notes.md \
-            dist/*
+          # The release may already exist — someone can create one from the
+          # GitHub UI, which pushes the tag and triggers this same workflow.
+          # Failing in that case would leave them with an empty release and a
+          # red run, which is the exact thing this workflow exists to prevent.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — updating it."
+            gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --title "CECC $TAG" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "CECC $TAG" \
+              --notes-file notes.md \
+              dist/*
+          fi
+
+          echo "Published: $(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
