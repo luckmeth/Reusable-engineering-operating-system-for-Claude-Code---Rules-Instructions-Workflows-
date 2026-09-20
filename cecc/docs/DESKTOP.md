@@ -116,8 +116,10 @@ Two things the workflow has to work around, both worth knowing if you fork it:
   puts it in the checkout path twice, which pushes app-builder-lib's NSIS
   includes past 260 characters and fails the build with `!include: could not
   open file`. `makensis` is a legacy binary that ignores long-path support, so
-  the workflow builds through a junction at `D:\w` rather than changing a
-  setting.
+  the build needs a genuinely shorter path. A junction is not enough — Node
+  resolves `require` through `realpath`, so app-builder-lib's `__dirname` comes
+  back long and NSIS is handed the long path anyway. The workflow copies the
+  tree to `D:\w` and builds there.
 - **Auto-publish.** electron-builder publishes to GitHub Releases on its own
   when it sees CI and a `repository` field, and then fails for want of a token
   *after* building every artifact. Every `dist:*` script passes

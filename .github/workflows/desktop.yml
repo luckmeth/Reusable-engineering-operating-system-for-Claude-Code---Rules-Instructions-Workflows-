@@ -51,16 +51,23 @@ jobs:
       - uses: actions/checkout@v4
 
       # Windows only. MAX_PATH is 260 characters; this repository's name is 85
-      # of them and the runner's checkout path contains it twice, which pushed
-      # app-builder-lib's NSIS includes past the limit and failed the build with
+      # of them and the runner's checkout path contains it twice, which pushes
+      # app-builder-lib's NSIS includes past the limit and fails the build with
       # "!include: could not open file". makensis is a legacy binary that does
-      # not honour long-path support, so the fix is a shorter path rather than a
-      # setting. A junction exposes the same tree under one.
-      - name: Shorten the build path (Windows MAX_PATH)
+      # not honour long-path support, so the build needs a genuinely shorter
+      # path.
+      #
+      # A junction is not enough: Node resolves `require` through realpath, so
+      # app-builder-lib's own __dirname comes back as the long path and NSIS is
+      # handed it anyway. The tree has to actually live somewhere short, so it
+      # is copied and everything after this runs from the copy.
+      - name: Copy the build to a short path (Windows MAX_PATH)
         if: runner.os == 'Windows'
         working-directory: ${{ github.workspace }}
         shell: cmd
-        run: mklink /J D:\w "${{ github.workspace }}"
+        run: |
+          robocopy "%GITHUB_WORKSPACE%" D:\w /E /NFL /NDL /NJH /NJS /NP /XD node_modules
+          if %ERRORLEVEL% GEQ 8 (exit /b 1) else (exit /b 0)
 
       - uses: actions/setup-node@v4
         with:
@@ -86,6 +93,16 @@ jobs:
           # have, and pretending otherwise would produce an installer that
           # claims a publisher it cannot prove.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      # The Windows build ran outside the workspace, so bring its output back
+      # and keep one upload step for every platform.
+      - name: Collect Windows artifacts into the workspace
+        if: runner.os == 'Windows'
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path cecc\apps\desktop\release | Out-Null
+          Copy-Item D:\w\cecc\apps\desktop\release\* cecc\apps\desktop\release\ -Recurse -Force
 
       - uses: actions/upload-artifact@v4
         with:
