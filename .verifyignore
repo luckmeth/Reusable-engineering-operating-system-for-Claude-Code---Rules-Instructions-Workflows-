@@ -1,0 +1,30 @@
+# Paths excluded from the pattern-shape checks in scripts/verify.sh.
+#
+# Each line is a substring matched against the file path. Comments and blank
+# lines are ignored. This does NOT exclude anything from the literal-credential
+# scan — a real key committed to a test file is still a real key.
+#
+# Why these entries exist: a security test has to write down the insecure
+# pattern in order to prove the control against it, and a detection rule has to
+# write it down in order to match it. Reporting those as findings would mean a
+# suite that proves a control works reads identically to a codebase missing the
+# control, and a checker that cries wolf on its own tests stops being run.
+#
+# Add a path here only with a reason. If you cannot write the reason, the
+# finding is probably real.
+
+# CECC's own test suites. They contain deliberate fixtures: a service-role key
+# behind a NEXT_PUBLIC_ prefix, an empty catch block, dangerouslySetInnerHTML
+# with interpolated request data. Each one exists so a rule can be shown to
+# catch it, and several assert that it IS caught.
+cecc/packages/core/test/
+cecc/packages/ml/test/
+
+# CECC's detection rules. These files are the regexes that find the patterns,
+# so they necessarily contain them. They are server-side Node modules with no
+# JSX and no environment access.
+cecc/packages/core/src/rules/
+
+# The engineering system's own test directories, for the same reason: security
+# tests under tests/security/ exist to attempt the thing they name.
+tests/security/

@@ -7,13 +7,15 @@ name: Desktop build
 # Each runner here produces the artifact natively, which is both simpler and the
 # only way the installer is ever executed before a user executes it.
 on:
-  # workflow_dispatch only appears once this file is on the default branch.
-  # Until then, a push that touches the desktop build is what runs it.
   workflow_dispatch:
+  # Releases call this workflow rather than duplicating the matrix. Tags are
+  # deliberately not a trigger here: GitHub applies a `paths` filter to tag
+  # pushes too, so a tag whose commit happens not to touch these paths would
+  # silently build nothing. release.yml owns tags and has no paths filter.
+  workflow_call:
   push:
-    tags:
-      - 'v*'
     branches:
+      - 'main'
       - 'claude/**'
     paths:
       - 'cecc/apps/desktop/**'

@@ -27,8 +27,51 @@ src_grep() {
     . 2>/dev/null
 }
 
+# Paths excluded from the pattern-shape checks, listed one substring per line
+# in .verifyignore.
+#
+# The checks below look for the *shape* of a mistake, and a security test or a
+# detection rule has to write that shape down in order to test for it. Without
+# a way to say so, this script reports a suite that proves a control works as
+# though the control were missing — and a checker that cries wolf on its own
+# tests is one people stop running.
+#
+# It deliberately does not apply to the literal-credential scan further down. A
+# real key committed to a test file is a real key.
+VERIFY_IGNORE="${VERIFY_IGNORE:-.verifyignore}"
+
+filter_ignored() {
+  if [[ ! -f "$VERIFY_IGNORE" ]]; then cat; return; fi
+  awk -v ignorefile="$VERIFY_IGNORE" '
+    BEGIN {
+      n = 0
+      while ((getline line < ignorefile) > 0) {
+        sub(/#.*/, "", line)
+        gsub(/^[ \t]+|[ \t]+$/, "", line)
+        if (line != "") pats[++n] = line
+      }
+    }
+    {
+      path = $0
+      sub(/:.*/, "", path)
+      for (i = 1; i <= n; i++) if (index(path, pats[i])) next
+      print
+    }
+  '
+}
+
+# Prints the first few hits of a pattern-shape search, minus ignored paths.
+shape_hits() {
+  src_grep "$1" | filter_ignored
+}
+
 echo
 echo "${BOLD}Engineering System Verification${OFF}  ($(pwd))"
+if [[ -f "$VERIFY_IGNORE" ]]; then
+  # Never let an exclusion be silent — a reader has to be able to see what was
+  # skipped without opening the script.
+  echo "  pattern-shape checks skip paths listed in ${VERIFY_IGNORE}: $(grep -cvE '^\s*(#|$)' "$VERIFY_IGNORE") entr$( [[ $(grep -cvE '^\s*(#|$)' "$VERIFY_IGNORE") -eq 1 ]] && echo y || echo ies)"
+fi
 echo
 
 # ---------------------------------------------------------------------------
@@ -47,9 +90,10 @@ else
 fi
 
 # A service-role key or secret reachable from client code is a full data breach.
-if src_grep 'NEXT_PUBLIC_[A-Z_]*(SERVICE_ROLE|SECRET|PRIVATE_KEY|PASSWORD)' >/dev/null; then
+hits=$(shape_hits 'NEXT_PUBLIC_[A-Z_]*(SERVICE_ROLE|SECRET|PRIVATE_KEY|PASSWORD)')
+if [[ -n "$hits" ]]; then
   fail "secret exposed through a NEXT_PUBLIC_* variable:"
-  src_grep 'NEXT_PUBLIC_[A-Z_]*(SERVICE_ROLE|SECRET|PRIVATE_KEY|PASSWORD)' | head -5 | sed 's/^/        /'
+  echo "$hits" | head -5 | sed 's/^/        /'
 else
   pass "no secret behind a NEXT_PUBLIC_ prefix"
 fi
@@ -106,24 +150,27 @@ fi
 echo
 echo "${BOLD}Code patterns${OFF}"
 
-if src_grep 'catch\s*\([^)]*\)\s*\{\s*\}' >/dev/null; then
+hits=$(shape_hits 'catch\s*\([^)]*\)\s*\{\s*\}')
+if [[ -n "$hits" ]]; then
   warn "empty catch block (swallowed error):"
-  src_grep 'catch\s*\([^)]*\)\s*\{\s*\}' | head -3 | sed 's/^/        /'
+  echo "$hits" | head -3 | sed 's/^/        /'
 else
   pass "no empty catch blocks"
 fi
 
-if src_grep 'dangerouslySetInnerHTML' >/dev/null; then
+hits=$(shape_hits 'dangerouslySetInnerHTML')
+if [[ -n "$hits" ]]; then
   warn "dangerouslySetInnerHTML present — verify the content is not user-supplied:"
-  src_grep 'dangerouslySetInnerHTML' | head -3 | sed 's/^/        /'
+  echo "$hits" | head -3 | sed 's/^/        /'
 else
   pass "no dangerouslySetInnerHTML"
 fi
 
 # tenant_id taken from a request body is a direct cross-tenant escalation.
-if src_grep '(body|req\.body|params|query)\.(tenant_?[Ii]d|organization_?[Ii]d)' >/dev/null; then
+hits=$(shape_hits '(body|req\.body|params|query)\.(tenant_?[Ii]d|organization_?[Ii]d)')
+if [[ -n "$hits" ]]; then
   fail "tenant id read from a request — it must come from the session:"
-  src_grep '(body|req\.body|params|query)\.(tenant_?[Ii]d|organization_?[Ii]d)' | head -5 | sed 's/^/        /'
+  echo "$hits" | head -5 | sed 's/^/        /'
 else
   pass "no tenant id read from request input"
 fi
