@@ -44,7 +44,8 @@ No daemon. Hooks write, CLI and dashboard read, SQLite WAL mediates.
   controls, intelligence — in plain-English and technical modes.
 - Local ML triage: logistic regression and naive Bayes, chosen on held-out AUC,
   reordering within severity bands only.
-- Desktop application packaged for Linux and Windows, launched and verified.
+- Desktop application packaged for Linux, Windows and macOS. The Linux build
+  was launched and verified here; all three are built natively in CI.
 
 ## Last validated test state — VERIFIED
 
@@ -71,6 +72,10 @@ chain: AGENT-005 → AGENT-003 → CORR-001 → AGENT-002 → CORR-004.
 - Dashboard builds and serves all routes against real data — VERIFIED.
 - Desktop application launches, starts its own server and renders the dashboard
   with real project data — VERIFIED (Linux AppImage and unpacked build).
+- `.github/workflows/desktop.yml` green on all three runners — VERIFIED
+  (run 35497747169). Windows produced `CECC-0.1.0-win-x64.exe` (NSIS installer)
+  and `CECC-0.1.0-win-x64.zip`; macOS produced a dmg and a zip; Linux an
+  AppImage and a tar.gz. Nothing is code-signed.
 
 ## Measured performance
 
@@ -90,8 +95,13 @@ Taken on this repository (162 scannable files, 417 events):
   `api.osv.dev` — that host is unreachable from the build environment used here.
   The offline degradation path is verified; the live round trip is NOT TESTED.
 - The Windows NSIS installer cannot be cross-built from Linux without 32-bit
-  Wine. The Windows zip cross-builds cleanly and was produced and verified; the
-  installer is built natively by `.github/workflows/desktop.yml`.
+  Wine. The Windows zip cross-builds cleanly and was produced and verified here;
+  the installer is built natively by `.github/workflows/desktop.yml`.
+- Building on Windows requires a short path. This repository's name is 85
+  characters and the runner's checkout path contains it twice, which pushes
+  app-builder-lib's NSIS includes past MAX_PATH. The workflow copies the tree to
+  `D:\w` first; a junction is not enough, because Node resolves `require`
+  through realpath and hands NSIS the long path anyway.
 - Behind an HTTPS proxy, Node's global `fetch` ignores `HTTPS_PROXY` unless
   `NODE_USE_ENV_PROXY=1` is set, which affects OSV and cloud sync but not npm
   audit.
@@ -110,7 +120,8 @@ Taken on this repository (162 scannable files, 417 events):
 - AI-assisted analysis for cases deterministic rules cannot resolve. Deliberate:
   it would add a network dependency and a non-reproducible verdict to a tool
   whose value is that every claim is traceable.
-- macOS packaging is configured but has never been built or launched.
+- The macOS dmg is built in CI but has never been launched on a Mac. Nothing in
+  the desktop build is code-signed or notarized, so macOS will quarantine it.
 
 ## Architecture decisions
 
@@ -136,5 +147,5 @@ demonstrates value.
 ## Next recommended task
 
 Verify the OSV live path once from a network that can reach `api.osv.dev`, and
-build the macOS target once on a Mac. Both are the same shape of gap: code that
-is unit-tested and has never met the real thing.
+launch the macOS dmg once on a Mac. Both are the same shape of gap: code that
+builds and is unit-tested, and has never met the real thing.
