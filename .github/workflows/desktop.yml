@@ -1,0 +1,117 @@
+name: Desktop build
+
+# Desktop artifacts are built on their own operating system.
+#
+# Cross-building a Windows installer from Linux needs Wine and a 32-bit loader
+# for the NSIS stub, and the result is signed by nothing and tested on nothing.
+# Each runner here produces the artifact natively, which is both simpler and the
+# only way the installer is ever executed before a user executes it.
+on:
+  # workflow_dispatch only appears once this file is on the default branch.
+  # Until then, a push that touches the desktop build is what runs it.
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - 'claude/**'
+    paths:
+      - 'cecc/apps/desktop/**'
+      - 'cecc/scripts/**'
+      - 'cecc/apps/dashboard/**'
+      - 'cecc/packages/**'
+      - '.github/workflows/desktop.yml'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: desktop:win
+            artifact: cecc-windows
+            # Not `cecc`: see the junction step below.
+            workdir: D:\w\cecc
+          - os: macos-latest
+            target: desktop:mac
+            artifact: cecc-macos
+            workdir: cecc
+          - os: ubuntu-latest
+            target: desktop:linux
+            artifact: cecc-linux
+            workdir: cecc
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ${{ matrix.workdir }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Windows only. MAX_PATH is 260 characters; this repository's name is 85
+      # of them and the runner's checkout path contains it twice, which pushes
+      # app-builder-lib's NSIS includes past the limit and fails the build with
+      # "!include: could not open file". makensis is a legacy binary that does
+      # not honour long-path support, so the build needs a genuinely shorter
+      # path.
+      #
+      # A junction is not enough: Node resolves `require` through realpath, so
+      # app-builder-lib's own __dirname comes back as the long path and NSIS is
+      # handed it anyway. The tree has to actually live somewhere short, so it
+      # is copied and everything after this runs from the copy.
+      - name: Copy the build to a short path (Windows MAX_PATH)
+        if: runner.os == 'Windows'
+        working-directory: ${{ github.workspace }}
+        shell: cmd
+        run: |
+          robocopy "%GITHUB_WORKSPACE%" D:\w /E /NFL /NDL /NJH /NJS /NP /XD node_modules
+          if %ERRORLEVEL% GEQ 8 (exit /b 1) else (exit /b 0)
+
+      - uses: actions/setup-node@v4
+        with:
+          # node:sqlite needs 22.5+; the desktop build runs it under Electron's
+          # own Node, but the test and build steps run it here.
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cecc/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build desktop artifacts
+        run: npm run ${{ matrix.target }}
+        env:
+          # Unsigned builds. Signing needs certificates this workflow does not
+          # have, and pretending otherwise would produce an installer that
+          # claims a publisher it cannot prove.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      # The Windows build ran outside the workspace, so bring its output back
+      # and keep one upload step for every platform.
+      - name: Collect Windows artifacts into the workspace
+        if: runner.os == 'Windows'
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path cecc\apps\desktop\release | Out-Null
+          Copy-Item D:\w\cecc\apps\desktop\release\* cecc\apps\desktop\release\ -Recurse -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            cecc/apps/desktop/release/*.exe
+            cecc/apps/desktop/release/*.zip
+            cecc/apps/desktop/release/*.dmg
+            cecc/apps/desktop/release/*.AppImage
+            cecc/apps/desktop/release/*.tar.gz

@@ -44,5 +44,73 @@
       "Bash(rm -rf:*)",
       "Bash(curl:*|sh)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/user/Reusable-engineering-operating-system-for-Claude-Code---Rules-Instructions-Workflows-/cecc/packages/cli/dist/hook.js\""
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/user/Reusable-engineering-operating-system-for-Claude-Code---Rules-Instructions-Workflows-/cecc/packages/cli/dist/hook.js\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/user/Reusable-engineering-operating-system-for-Claude-Code---Rules-Instructions-Workflows-/cecc/packages/cli/dist/hook.js\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/user/Reusable-engineering-operating-system-for-Claude-Code---Rules-Instructions-Workflows-/cecc/packages/cli/dist/hook.js\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/user/Reusable-engineering-operating-system-for-Claude-Code---Rules-Instructions-Workflows-/cecc/packages/cli/dist/hook.js\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/user/Reusable-engineering-operating-system-for-Claude-Code---Rules-Instructions-Workflows-/cecc/packages/cli/dist/hook.js\""
+          }
+        ]
+      }
+    ]
   }
 }

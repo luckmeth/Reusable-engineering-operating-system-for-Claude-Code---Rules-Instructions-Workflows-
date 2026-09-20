@@ -48,3 +48,6 @@ Thumbs.db
 
 # Claude Code local overrides — shared settings.json IS committed
 .claude/settings.local.json
+
+# CECC local event store
+.cecc/

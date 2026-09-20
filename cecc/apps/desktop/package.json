@@ -1,0 +1,83 @@
+{
+  "name": "cecc-desktop",
+  "productName": "CECC",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude Engineering Control Center \u2014 local-first engineering observability, workflow, security and quality control for AI-assisted development.",
+  "license": "MIT",
+  "author": "CECC",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.4.3",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "dev.cecc.desktop",
+    "productName": "CECC",
+    "artifactName": "CECC-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "icons"
+    },
+    "files": [
+      "electron/**/*",
+      "build-resources/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "icons/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "CECC"
+    },
+    "linux": {
+      "icon": "icons/icon.png",
+      "category": "Development",
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "synopsis": "Engineering observability and security control for AI-assisted development",
+      "syncDesktopName": true
+    },
+    "mac": {
+      "icon": "icons/icon.png",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "electronVersion": "44.4.3",
+    "asarUnpack": [
+      "build-resources/**/*"
+    ]
+  },
+  "repository": "https://github.com/luckmeth/Reusable-engineering-operating-system-for-Claude-Code---Rules-Instructions-Workflows-",
+  "desktopName": "cecc.desktop"
+}

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.next/
+out/
+coverage/
+
+# CECC's own local event store, when CECC is run against this repo
+.cecc/
+
+# Desktop build outputs — staged resources and packaged installers.
+# These run to hundreds of megabytes and are reproduced by `npm run desktop`,
+# so they are artifacts of the build, not inputs to it.
+apps/desktop/build-resources/
+apps/desktop/release/
+apps/desktop/icons/
