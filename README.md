@@ -62,6 +62,7 @@ bash scripts/verify.sh /path/to/project
 | `tests/security/` | Access control, RLS, webhook forgery/replay, and input validation test patterns |
 | `scripts/install.sh` | Installs the system into any project |
 | `scripts/verify.sh` | Grep-level checks: secrets, RLS coverage, client-trusted tenant IDs, swallowed errors |
+| `.verifyignore` | Paths whose *shape* matches `verify.sh` should ignore — security tests and detection rules have to write the insecure pattern down. Never applies to the literal-credential scan. |
 | `.github/workflows/ci.yml` | Validates system integrity and smoke-tests the installer |
 
 ### Rules
