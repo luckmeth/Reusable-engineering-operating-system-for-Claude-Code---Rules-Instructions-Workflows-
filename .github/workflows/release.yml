@@ -1,0 +1,97 @@
+name: Release
+
+# Publishes a GitHub Release with the desktop installers attached.
+#
+# Actions artifacts expire — 14 days by default — so a build that only uploads
+# them leaves nothing a user can download a month later. A Release is the
+# durable copy, and it is created deliberately from a tag rather than on every
+# push.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release (e.g. v0.1.0)'
+        required: true
+        type: string
+
+jobs:
+  # Reuses the same matrix that builds on every desktop change, so a release is
+  # built by the pipeline that has already been exercised rather than by a
+  # second one that only runs on tag day.
+  build:
+    uses: ./.github/workflows/desktop.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          find artifacts -type f \
+            \( -name '*.exe' -o -name '*.zip' -o -name '*.dmg' \
+               -o -name '*.AppImage' -o -name '*.tar.gz' \) \
+            -exec cp {} dist/ \;
+
+          echo "Files to attach:"
+          ls -lh dist
+
+          # An empty release is worse than a failed job: it looks like a
+          # successful publish until someone tries to download something.
+          if [ -z "$(ls -A dist)" ]; then
+            echo "::error::No build artifacts were produced — refusing to publish an empty release."
+            exit 1
+          fi
+
+          cat > notes.md <<'NOTES'
+          Desktop builds of CECC — the Claude Engineering Control Center.
+
+          | File | Platform | What it is |
+          |---|---|---|
+          | `CECC-*-win-x64.exe` | Windows | Installer. Choose your own directory, installs per user. |
+          | `CECC-*-win-x64.zip` | Windows | Portable — unzip and run `CECC.exe`. |
+          | `CECC-*-mac-*.dmg` | macOS | Disk image. |
+          | `CECC-*-mac-*.zip` | macOS | Zipped app bundle. |
+          | `CECC-*-linux-*.AppImage` | Linux | Single file, `chmod +x` and run. |
+          | `CECC-*-linux-x64.tar.gz` | Linux | Extract and run `cecc-desktop`. |
+
+          **These builds are not code-signed or notarized.** Signing needs
+          certificates this repository does not hold, and an installer claiming
+          a publisher it cannot prove would be worse than an unsigned one.
+          Windows SmartScreen will warn; macOS will quarantine the app
+          (`xattr -d com.apple.quarantine /Applications/CECC.app` clears it).
+
+          Nothing is required on the machine: the application runs the dashboard
+          on its own bundled Node runtime, binds it to loopback on a random
+          port, and stores everything in `.cecc/` inside the project you point
+          it at. Nothing leaves the machine unless cloud sync is explicitly
+          enabled.
+
+          Known limitations are listed in `cecc/docs/PROJECT_STATE.md`. The
+          macOS build has never been launched on a Mac.
+          NOTES
+
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "CECC $TAG" \
+            --notes-file notes.md \
+            dist/*
