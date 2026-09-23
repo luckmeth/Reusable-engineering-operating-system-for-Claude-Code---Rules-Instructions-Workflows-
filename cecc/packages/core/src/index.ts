@@ -22,6 +22,7 @@ export { detectSandbox, type SandboxInfo } from './env.js';
 // Analysis
 export * from './analyze/command.js';
 export * from './analyze/content.js';
+export { accountTokens, estimateTokens, formatTokens, type TokenAccounting, type TokenBreakdown } from './analyze/tokens.js';
 
 // Storage
 export { Store, type EventQuery, type TestResultRecord } from './storage/store.js';
@@ -106,6 +107,7 @@ export { parseTestOutput, parseValidationOutput, type TestSummary } from './moni
 // Adapters
 export type { AgentAdapter, AdapterContext, NormalizedActivity } from './adapters/types.js';
 export { ClaudeCodeAdapter, claudeCodeAdapter, safeReadFile, type ClaudeHookPayload } from './adapters/claude-code.js';
+export { isCeccHookCommand, hookPathFromCommand } from './adapters/hooks.js';
 
 // Config and paths
 export { ceccPaths, findProjectRoot, globalCeccDir, CECC_DIR, type CeccPaths } from './paths.js';

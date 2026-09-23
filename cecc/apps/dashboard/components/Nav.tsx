@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { ViewModeToggle } from './ViewMode';
 
 const LINKS = [
+  { href: '/control', label: 'Control panel' },
   { href: '/', label: 'Overview' },
   { href: '/findings', label: 'What needs fixing' },
   { href: '/activity', label: 'Live activity' },
@@ -15,8 +16,20 @@ const LINKS = [
   { href: '/intelligence', label: 'Learning' },
 ];
 
-export function Nav({ projectName, environment }: { projectName: string; environment: string }) {
+export function Nav({
+  projectName,
+  environment,
+  hasTerminal = false,
+}: {
+  projectName: string;
+  environment: string;
+  /** The embedded terminal exists only in the desktop shell. */
+  hasTerminal?: boolean;
+}) {
   const pathname = usePathname();
+  const links = hasTerminal ? [...LINKS, { href: '/terminal', label: 'Claude Code' }] : LINKS;
+  // /control is a prefix of nothing, but '/' is a prefix of everything, so the
+  // active test below needs the exact match to win for the root link.
 
   return (
     <header className="sticky top-0 z-10 border-b border-surface-border bg-surface/95 backdrop-blur">
@@ -32,7 +45,7 @@ export function Nav({ projectName, environment }: { projectName: string; environ
         </div>
 
         <nav className="flex flex-wrap items-center gap-1" aria-label="Main">
-          {LINKS.map((link) => {
+          {links.map((link) => {
             const active = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href));
             return (
               <Link

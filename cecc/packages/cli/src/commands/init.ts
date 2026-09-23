@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -13,6 +13,7 @@ import {
   saveProjectConfig,
   ruleCount,
   git,
+  isCeccHookCommand,
 } from '@cecc/core';
 import { c, heading, kv } from '../ui.js';
 
@@ -111,7 +112,7 @@ export function installHooks(root: string): HookInstallResult {
   const messages: string[] = [];
   const settingsPath = join(root, '.claude', 'settings.json');
   const hookPath = resolveHookPath(root);
-  const command = `node "${hookPath}"`;
+  const { command, notes } = resolveHookCommand(root, hookPath);
 
   const events = ['SessionStart', 'SessionEnd', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Stop'];
 
@@ -130,7 +131,7 @@ export function installHooks(root: string): HookInstallResult {
     let added = 0;
     for (const event of events) {
       const existing = settings.hooks[event] ?? [];
-      const alreadyPresent = existing.some((m) => m.hooks?.some((h) => h.command?.includes('cecc')));
+      const alreadyPresent = existing.some((m) => m.hooks?.some((h) => isCeccHookCommand(h.command, hookPath)));
       if (alreadyPresent) continue;
 
       existing.push({ matcher: '', hooks: [{ type: 'command', command }] });
@@ -146,6 +147,7 @@ export function installHooks(root: string): HookInstallResult {
     }
     messages.push(c.gray(`  Command: ${command}`));
     messages.push(c.gray(`  Events:  ${events.join(', ')}`));
+    messages.push(...notes);
     if (!existsSync(hookPath)) {
       // Saying "registered" while pointing at a file that does not exist is the
       // kind of false success CECC exists to catch. Say it plainly instead.
@@ -160,7 +162,53 @@ export function installHooks(root: string): HookInstallResult {
 }
 
 /**
- * Picks the hook command written into `.claude/settings.json`.
+ * Builds the command written into `.claude/settings.json`.
+ *
+ * `node "<hook>"` assumes Node is installed and on PATH. That is true when
+ * CECC was installed with npm and false for the desktop application, whose
+ * whole premise is that it brings its own runtime — so on a machine without
+ * Node every hook fails silently while the dashboard still looks installed.
+ * That is the failure `resolveHookPath` exists to prevent, one layer up.
+ *
+ * Inside Electron the interpreter guaranteed to exist is the one running this
+ * code, but it needs ELECTRON_RUN_AS_NODE set *before* it starts, and a
+ * settings.json command string cannot portably carry an environment variable.
+ * A one-line launcher script in `.cecc/` can.
+ */
+function resolveHookCommand(root: string, hookPath: string): { command: string; notes: string[] } {
+  if (!process.versions.electron) return { command: `node "${hookPath}"`, notes: [] };
+
+  const runtime = process.execPath;
+  const windows = process.platform === 'win32';
+  const dir = ceccPaths(root).dir;
+  const launcher = join(dir, windows ? 'hook.cmd' : 'hook.sh');
+  const script = windows
+    ? ['@echo off', 'set ELECTRON_RUN_AS_NODE=1', `"${runtime}" "${hookPath}" %*`, ''].join('\r\n')
+    : ['#!/bin/sh', `ELECTRON_RUN_AS_NODE=1 exec "${runtime}" "${hookPath}" "$@"`, ''].join('\n');
+
+  try {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(launcher, script, 'utf8');
+    if (!windows) chmodSync(launcher, 0o755);
+    return {
+      command: `"${launcher}"`,
+      notes: [c.gray(`  Runtime: ${runtime} — no separate Node installation needed`)],
+    };
+  } catch (err) {
+    // Fall back rather than fail: `node` may well be present, and a hook that
+    // might work beats no hook at all. Say which one was written.
+    return {
+      command: `node "${hookPath}"`,
+      notes: [
+        `${c.yellow('!')} Could not write ${launcher}: ${err instanceof Error ? err.message : String(err)}`,
+        c.gray('  Falling back to `node` on PATH — hooks will not fire without it.'),
+      ],
+    };
+  }
+}
+
+/**
+ * Picks the hook script `.claude/settings.json` points at.
  *
  * The order matters. A project that vendors CECC as a workspace, or installs it
  * as a dependency, should keep using its own copy so the hook version tracks

@@ -208,6 +208,24 @@ export function isProseString(text: string): boolean {
   return false;
 }
 
+/**
+ * Is this line a comment rather than code?
+ *
+ * Name-based rules match text, and text includes the sentence explaining why
+ * the name used to be dangerous. Writing up a fixed vulnerability re-triggered
+ * the rule that found it, at CRITICAL — the comment below `resultsPasswordOk`
+ * in a project that had just moved its password check to the server.
+ *
+ * Only whole-line comments count. A trailing `// …` after real code leaves the
+ * code on the line, so the line still deserves to be read.
+ */
+export function isCommentLine(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  // JS/TS, JSDoc continuations, shell and env files, SQL, HTML/JSX.
+  return /^(?:\/\/|\/\*|\*(?!\/)|\*\/|#|--|<!--)/.test(t);
+}
+
 export function isPatternDefinition(text: string): boolean {
   return PATTERN_DEFINITION.test(text) || INLINE_REGEX_LITERAL.test(text);
 }

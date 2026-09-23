@@ -52,11 +52,45 @@ copy(join(repo, 'packages', 'core', 'dist'), join(cliModules, '@cecc', 'core', '
 copy(join(repo, 'packages', 'core', 'package.json'), join(cliModules, '@cecc', 'core', 'package.json'));
 copy(join(repo, 'node_modules', 'zod'), join(cliModules, 'zod'));
 
-// 3. Documentation, so "Help → Open documentation folder" opens something real.
+// 3. The terminal backend.
+//
+//    node-pty is the one native dependency in the project. It is Node-API
+//    based and ships prebuilt binaries, so it loads unchanged under Electron's
+//    Node — there is no electron-rebuild step and no per-ABI matrix. What it
+//    does need is to be a real file on disk, which is why it is staged here
+//    with everything else rather than left to electron-builder.
+//
+//    Only this platform's prebuild is copied. The full directory carries every
+//    platform plus ~28MB of .pdb debug symbols, none of which a shipped build
+//    has any use for.
+const ptySource = join(repo, 'node_modules', 'node-pty');
+const ptyTarget = join(stage, 'runtime', 'node_modules', 'node-pty');
+copy(join(ptySource, 'package.json'), join(ptyTarget, 'package.json'));
+copy(join(ptySource, 'lib'), join(ptyTarget, 'lib'));
+if (existsSync(join(ptySource, 'build'))) copy(join(ptySource, 'build'), join(ptyTarget, 'build'));
+
+const prebuild = `${process.platform}-${process.arch}`;
+const prebuildSource = join(ptySource, 'prebuilds', prebuild);
+if (!existsSync(prebuildSource)) {
+  // Saying "built" while the terminal cannot start is the kind of quiet
+  // half-success this project exists to report on.
+  throw new Error(
+    `node-pty has no prebuilt binary for ${prebuild}. Build it from source before staging, or the embedded terminal will not start.`,
+  );
+}
+cpSync(prebuildSource, join(ptyTarget, 'prebuilds', prebuild), {
+  recursive: true,
+  dereference: true,
+  filter: (src) => !src.endsWith('.pdb'),
+});
+
+copy(join(repo, 'node_modules', 'ws'), join(stage, 'runtime', 'node_modules', 'ws'));
+
+// 4. Documentation, so "Help → Open documentation folder" opens something real.
 copy(join(repo, 'docs'), join(stage, 'docs'));
 copy(join(repo, 'README.md'), join(stage, 'docs', 'README.md'));
 
-// 4. The window icon used at runtime (the packaged icons are separate).
+// 5. The window icon used at runtime (the packaged icons are separate).
 copy(join(repo, 'apps', 'desktop', 'icons', 'icon.png'), join(stage, 'icon.png'));
 
 // A manifest makes it possible to tell, from an installed copy, exactly which

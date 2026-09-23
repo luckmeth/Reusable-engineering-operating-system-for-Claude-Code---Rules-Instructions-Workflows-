@@ -32,6 +32,7 @@ hook payload  ──[untrusted]──►  adapter (schema-validated, tolerant)
 repo content  ──[untrusted]──►  rules (data only, never instructions)
 policy file   ──[integrity-checked]──►  enforcement
 event store   ──[hash-chained]──►  reporting
+renderer      ──[untrusted]──►  terminal socket (keystrokes only, fixed program)
 ```
 
 ## Defences
@@ -47,6 +48,8 @@ event store   ──[hash-chained]──►  reporting
 | Repository text redirects the agent | AGENT-027; repository content is data, never configuration | `adversarial.test.ts` |
 | A rule crashes and silently reduces coverage | Per-rule isolation; errors surfaced by `doctor` and `scan` | `adversarial.test.ts` |
 | CECC's own evidence becomes a credential store | Findings quote masked values only | `rules.security.test.ts` |
+| Another local process attaches to the embedded terminal | Loopback bind, random port, 32-byte token compared in constant time, Origin pinned to the dashboard | `terminal` section below |
+| The dashboard page asks the terminal to run an arbitrary command | It cannot name one: the program, its arguments and its cwd are chosen in the main process | `terminal` section below |
 
 ## Accepted limitations
 
@@ -76,6 +79,39 @@ mistake reliably and prove nothing about code they did not match.
 **No sandbox around rule execution.** Rules are first-party code in the same
 process. A malicious rule would have CECC's privileges, so third-party rules are
 not loadable.
+
+**The embedded terminal gives the renderer a path to a running agent.** This is
+the one place the desktop window's privileges grew, and it is worth stating
+plainly rather than burying.
+
+The dashboard renders finding evidence taken from repository content, which is
+untrusted. Before the terminal existed, the worst outcome of a rendering flaw
+there was a defaced page: the renderer is sandboxed, has no preload bridge, and
+could only talk to a local HTTP server that reads a database. It can now also
+reach a WebSocket attached to a live Claude Code session, and Claude Code can
+run commands. Script execution in that page therefore reaches further than it
+did.
+
+What the boundary still holds:
+
+- **The renderer cannot choose what runs.** It sends keystrokes and a terminal
+  size. The executable, its argument list and its working directory are decided
+  in the main process from the project the user opened. Exposing a shell would
+  have been less code and strictly worse — a page that can write
+  `powershell -c …` is a page that can run anything.
+- **The session is bounded by the opened project.** Changing project kills it.
+  There is no message that asks for a session anywhere else on disk.
+- **Reaching the socket from outside needs three things.** A loopback
+  connection, the random port, and a 32-byte per-launch token compared in
+  constant time, with the Origin header pinned to the dashboard's own.
+- **Input is bounded.** Frames over 64KB are dropped rather than forwarded.
+
+What it does not claim: none of this protects against the person typing into
+the terminal, and none of it makes an XSS in the dashboard harmless. It makes
+an XSS equivalent to sitting at the keyboard of a Claude Code session in that
+one project — which is a real escalation from what it was, and the reason this
+paragraph exists. Whatever that session then does is recorded by the same
+hooks as any other, so it is visible on the other tabs rather than invisible.
 
 ## What "secure" would require beyond CECC
 

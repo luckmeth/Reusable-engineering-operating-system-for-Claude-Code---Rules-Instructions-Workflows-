@@ -270,6 +270,28 @@ interface CryptoIssue {
   benign?: RegExp;
 }
 
+/**
+ * How far to look for evidence that a weak primitive is legitimate here.
+ *
+ * The benign check used to see only the matched line and the file path. In a
+ * Fisher-Yates shuffle the word "shuffle" is in the function name three lines
+ * up; on a confetti piece the giveaway `delay` is one line down. Both were
+ * reported as predictable-randomness bugs at HIGH severity, and neither
+ * generates anything an attacker could guess at.
+ *
+ * Six lines either side reaches the enclosing function's signature and its doc
+ * comment, and stops well short of letting an unrelated mention somewhere else
+ * in a long file silence a genuine finding.
+ */
+const BENIGN_CONTEXT_LINES = 6;
+
+function contextAround(change: ContentChange, line: number | null): string {
+  if (line === null || !change.fullContent) return '';
+  const all = change.fullContent.split(/\r?\n/);
+  const from = Math.max(0, line - 1 - BENIGN_CONTEXT_LINES);
+  return all.slice(from, Math.min(all.length, line + BENIGN_CONTEXT_LINES)).join('\n');
+}
+
 const CRYPTO_ISSUES: CryptoIssue[] = [
   {
     pattern: /createHash\s*\(\s*['"](?:md5|sha1)['"]|hashlib\.(?:md5|sha1)\s*\(/i,
@@ -284,7 +306,8 @@ const CRYPTO_ISSUES: CryptoIssue[] = [
     label: 'Predictable randomness',
     impact: 'Math.random is not cryptographically secure. Its output is predictable, so any token derived from it is guessable.',
     severity: 'high',
-    benign: /jitter|backoff|delay|animation|shuffle|sample|mock|placeholder|colou?r/i,
+    benign:
+      /jitter|backoff|delay|animation|animate|shuffle|sample|mock|placeholder|colou?r|confetti|particle|sparkle|emoji|avatar|canvas|transition|easing/i,
   },
   {
     pattern: /createCipheriv?\s*\(\s*['"](?:des|rc4|aes-\d+-ecb)['"]/i,
@@ -334,7 +357,8 @@ const AGENT_017: Rule = {
           // Context can make a weak primitive legitimate. Skip the obvious cases
           // rather than training people to ignore this rule.
           if (!issue.benign) return true;
-          return !issue.benign.test(l.text) && !issue.benign.test(change.file);
+          if (issue.benign.test(l.text) || issue.benign.test(change.file)) return false;
+          return !issue.benign.test(contextAround(change, l.line));
         });
         if (lines.length === 0) continue;
 

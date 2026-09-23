@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import {
   Store,
   SCHEMA_VERSION,
@@ -13,8 +15,23 @@ import {
   loadProjectConfig,
   ruleCount,
   PATTERNS,
+  hookPathFromCommand,
+  isCeccHookCommand,
 } from '@cecc/core';
+import { resolveHookPath } from './init.js';
 import { c, heading, wrapText } from '../ui.js';
+
+const exec = promisify(execFile);
+
+/** Is `name` runnable from PATH? The argument is a literal at every call site. */
+async function commandExists(name: string): Promise<boolean> {
+  try {
+    await exec(process.platform === 'win32' ? 'where' : 'which', [name], { timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 interface Check {
   label: string;
@@ -161,8 +178,12 @@ export async function doctorCommand(root: string): Promise<number> {
       const settings = JSON.parse(readFileSync(settingsPath, 'utf8')) as {
         hooks?: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
       };
+      const expectedHookPath = resolveHookPath(root);
+      const ceccHooksFor = (matchers: Array<{ hooks?: Array<{ command?: string }> }>) =>
+        matchers.flatMap((m) => (m.hooks ?? []).filter((h) => isCeccHookCommand(h.command, expectedHookPath)));
+
       const registered = Object.entries(settings.hooks ?? {})
-        .filter(([, matchers]) => matchers.some((m) => m.hooks?.some((h) => h.command?.includes('cecc'))))
+        .filter(([, matchers]) => ceccHooksFor(matchers).length > 0)
         .map(([event]) => event);
 
       checks.push(
@@ -171,15 +192,30 @@ export async function doctorCommand(root: string): Promise<number> {
           : { label: 'Hook registration', state: 'fail', detail: 'settings.json has no CECC hooks', fix: 'Run `cecc init --force`.' },
       );
 
+      // Two CECC hooks on one event means every action is recorded twice,
+      // which inflates counts and can make a single change look like a
+      // repeated pattern to the correlation rules.
+      const duplicated = Object.entries(settings.hooks ?? {})
+        .filter(([, matchers]) => ceccHooksFor(matchers).length > 1)
+        .map(([event]) => event);
+      if (duplicated.length > 0) {
+        checks.push({
+          label: 'Hook duplication',
+          state: 'fail',
+          detail: `${duplicated.join(', ')} registered more than once — events are recorded twice`,
+          fix: 'Remove the duplicate CECC entries from .claude/settings.json.',
+        });
+      }
+
       // A configured hook pointing at a file that does not exist fails silently
       // at runtime, which is the worst kind of broken.
       const commands = Object.values(settings.hooks ?? {})
         .flatMap((m) => m.flatMap((x) => x.hooks ?? []))
         .map((h) => h.command ?? '')
-        .filter((cmd) => cmd.includes('cecc'));
+        .filter((cmd) => isCeccHookCommand(cmd, expectedHookPath));
       const missing = commands.filter((cmd) => {
-        const match = /"([^"]+\.js)"/.exec(cmd) ?? /(\S+\.js)/.exec(cmd);
-        return match?.[1] ? !existsSync(match[1]) : false;
+        const path = hookPathFromCommand(cmd);
+        return path ? !existsSync(path) : false;
       });
       if (missing.length > 0) {
         checks.push({
@@ -190,6 +226,23 @@ export async function doctorCommand(root: string): Promise<number> {
         });
       } else if (commands.length > 0) {
         checks.push({ label: 'Hook executable', state: 'ok', detail: 'Hook script present on disk' });
+      }
+
+      // A hook that shells out to `node` does nothing on a machine without
+      // Node — and the desktop build is installed precisely by people who may
+      // not have one. It fails silently on every event.
+      if (commands.some((cmd) => /^\s*node\s/.test(cmd))) {
+        const nodeFound = await commandExists('node');
+        checks.push(
+          nodeFound
+            ? { label: 'Hook runtime', state: 'ok', detail: 'node is on PATH' }
+            : {
+                label: 'Hook runtime',
+                state: 'fail',
+                detail: 'The hook command runs `node`, which is not on PATH — hooks cannot fire',
+                fix: 'Re-initialize from the desktop application: it writes a launcher that uses its own bundled runtime.',
+              },
+        );
       }
     } catch (err) {
       checks.push({ label: 'Hook registration', state: 'fail', detail: `settings.json is not valid JSON: ${err instanceof Error ? err.message : ''}` });

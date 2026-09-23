@@ -154,10 +154,44 @@ export const SECRET_PATTERNS: SecretPattern[] = [
 /** Values that look credential-shaped but are obviously not real. */
 const PLACEHOLDER = /^(?:x{3,}|\*{3,}|\.{3,}|<[^>]+>|\$\{[^}]*\}|(?:your|my|the|a)[-_ ]|change[-_ ]?me|placeholder|example|dummy|sample|test|fake|redacted|todo|insert|put[-_ ]?your|process\.env\.|import\.meta\.env\.)/i;
 
+/**
+ * A whole value that is the *name* of a thing rather than the thing.
+ *
+ * `PLACEHOLDER` above is anchored and tests the captured value, which for a
+ * connection string is only the password segment. A README line reading
+ * `postgresql://USER:PASSWORD@HOST/db` therefore captured `PASSWORD`, matched
+ * none of those alternatives, had seven distinct characters, and was reported
+ * as a leaked privileged credential — CRITICAL, 94% confidence, in
+ * documentation.
+ *
+ * That failure costs more than the finding was worth. A scanner that cries
+ * critical at a placeholder teaches people to skim past criticals, and the one
+ * real leak then goes past with them.
+ */
+const GENERIC_VALUE =
+  /^(?:user(?:name)?|pass(?:word|wd)?|host(?:name)?|db(?:name)?|database|schema|port|secret|token|key|apikey|credential|value|string|email|login|account|admin|root|name|id|uuid|url|uri|endpoint|region|bucket|project)$/i;
+
+/** `[value]`, `{value}`, `{{value}}`, `____` — decoration, not a secret. */
+const DECORATED = /^(?:\[[^\]]*\]|\{\{?[^}]*\}?\}|<[^>]*>|_{2,}|-{2,})$/;
+
 function isPlaceholder(value: string): boolean {
-  if (PLACEHOLDER.test(value)) return true;
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  if (PLACEHOLDER.test(trimmed)) return true;
+  if (GENERIC_VALUE.test(trimmed)) return true;
+  if (DECORATED.test(trimmed)) return true;
+
+  // SCREAMING_SNAKE_CASE is how environment variables are written, not how
+  // credentials are generated: YOUR_PASSWORD, DB_PASSWORD, SUPABASE_KEY.
+  // The underscore is required — a bare run of capitals could be a real key,
+  // so `AB12CD34EF56` is still reported.
+  if (/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/.test(trimmed)) return true;
+
+  // "your-api-key", "api-key-here", "replace-with-token".
+  if (/^your[-_]|[-_]here$|^replace[-_]|^insert[-_]|^add[-_]your/i.test(trimmed)) return true;
+
   // A value with no character variety is almost certainly filler ("aaaaaaaa").
-  return new Set(value).size <= 2;
+  return new Set(trimmed).size <= 2;
 }
 
 export interface SecretMatch {

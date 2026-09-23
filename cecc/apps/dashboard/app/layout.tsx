@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { Nav } from '@/components/Nav';
+import { AppShell } from '@/components/shell/AppShell';
 import { ViewModeProvider } from '@/components/ViewMode';
 import { ToastProvider } from '@/components/Toast';
-import { loadProjectConfig } from '@cecc/core';
-import { resolveRoot } from '@/lib/server';
+import { getShellState, resolveRoot } from '@/lib/server';
+import { desktopShell } from '@/lib/desktop';
 
 export const metadata: Metadata = {
   title: 'CECC — Engineering Control Center',
@@ -15,20 +15,29 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const root = resolveRoot();
-  const project = loadProjectConfig(root);
+  // The shell needs counts and agent state on every page, so it is read here
+  // rather than threaded through each one. A project that is not initialized
+  // yields a shell with no rail and nothing to count, which is correct: there
+  // is nothing to navigate between yet.
+  const shell = getShellState(resolveRoot());
+  const { inShell, terminal } = desktopShell();
 
   return (
     <html lang="en">
-      <body className="min-h-screen">
+      <body className="overflow-hidden">
         <ViewModeProvider>
           <ToastProvider>
-          <Nav projectName={project?.name ?? 'not set up yet'} environment={project?.environment ?? 'development'} />
-          <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
-          <footer className="mx-auto max-w-7xl px-4 pb-10 pt-4 text-[11px] leading-relaxed text-ink-faint">
-            CECC only reports what it actually saw. Work done outside a monitored session will not appear here, and
-            finding nothing means no check matched — not that everything is safe.
-          </footer>
+            <AppShell
+              projectName={shell.projectName}
+              environment={shell.environment}
+              agentStatus={shell.agentStatus}
+              counts={shell.counts}
+              hasTerminal={terminal !== null}
+              inShell={inShell}
+              initialized={shell.initialized}
+            >
+              {children}
+            </AppShell>
           </ToastProvider>
         </ViewModeProvider>
       </body>

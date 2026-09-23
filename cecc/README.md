@@ -85,6 +85,39 @@ cecc status     # stage, findings, validation, what is blocking release
 
 ---
 
+## The control panel
+
+One page carrying the whole system: Claude Code running in the project, its
+actions arriving live beside it, and the standing state underneath — status,
+workflow, findings, context spend, rules and enforcement. It is what the
+desktop application opens on.
+
+Every panel is a projection of the same local store the CLI reads, and each
+links to the page holding its detail. Nothing on it is a second implementation
+of anything.
+
+```
+┌───────────────────────────┬──────────────────────┐
+│  Claude Code (terminal)   │  Live activity       │
+├────────┬────────┬─────────┼──────────────────────┤
+│ Status │ Workflow │ Findings │ Context spend     │
+├────────┴────────┴─────────┼──────────────────────┤
+│  Rules and enforcement    │  Limits, stated      │
+└───────────────────────────┴──────────────────────┘
+```
+
+### Context spend
+
+Claude Code's hooks report no usage figures, so nothing here is a billed
+number and nothing claims to be. CECC measures the content it watched cross
+the boundary — bytes read, bytes written, command output, prompt text — and
+estimates tokens from it at roughly four characters each.
+
+The panel does not say "saved". A saving is a counterfactual, and no
+measurement produces one. What it reports is **avoidable**: content that
+entered the context twice with nothing changing in between. That is an
+observation about what happened, not a claim about what could have.
+
 ## Dashboard
 
 ```bash
@@ -110,6 +143,18 @@ One window, no install step, no Node required on the machine: the Electron
 binary runs the dashboard as a child process on its own bundled Node 24, and
 the CLI ships inside. The window is sandboxed with no preload bridge, and the
 server binds to loopback on a random port. See [docs/DESKTOP.md](docs/DESKTOP.md).
+
+**Claude Code runs in the window.** The *Claude Code* tab attaches to a
+pseudo-terminal held by the main process, in the project CECC is watching, with
+that project's hooks registered — so the work appears on the other tabs as it
+happens. A session started in some other directory is invisible to CECC, and
+that gap is the usual reason a dashboard looks empty after a full day's work.
+
+The page can send keystrokes and a terminal size. It cannot name a program to
+run: the executable, its arguments and its working directory are chosen in the
+main process. What that costs is set out in
+[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) and argued in
+[docs/DECISIONS.md](docs/DECISIONS.md).
 
 ---
 

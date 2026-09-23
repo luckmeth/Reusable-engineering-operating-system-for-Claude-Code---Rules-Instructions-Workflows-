@@ -1,10 +1,17 @@
 {
   "name": "@cecc/cli",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
-  "bin": { "cecc": "./dist/index.js" },
+  "bin": {
+    "cecc": "./dist/index.js"
+  },
   "main": "./dist/index.js",
-  "scripts": { "build": "tsc -b", "clean": "rm -rf dist tsconfig.tsbuildinfo" },
-  "dependencies": { "@cecc/core": "0.1.0" }
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@cecc/core": "0.2.1"
+  }
 }

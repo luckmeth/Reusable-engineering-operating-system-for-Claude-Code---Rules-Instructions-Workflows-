@@ -1,9 +1,9 @@
 {
   "name": "cecc-desktop",
   "productName": "CECC",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
-  "description": "Claude Engineering Control Center \u2014 local-first engineering observability, workflow, security and quality control for AI-assisted development.",
+  "description": "Claude Engineering Control Center — local-first engineering observability, workflow, security and quality control for AI-assisted development.",
   "license": "MIT",
   "author": "CECC",
   "main": "electron/main.cjs",
@@ -76,7 +76,8 @@
     "electronVersion": "44.4.3",
     "asarUnpack": [
       "build-resources/**/*"
-    ]
+    ],
+    "npmRebuild": false
   },
   "repository": "https://github.com/luckmeth/Reusable-engineering-operating-system-for-Claude-Code---Rules-Instructions-Workflows-",
   "desktopName": "cecc.desktop"

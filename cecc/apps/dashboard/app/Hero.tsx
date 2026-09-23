@@ -8,6 +8,90 @@ import type { ReactNode } from 'react';
  * computed from the same gates — but it is stated as a conclusion rather than
  * as a category.
  */
+/**
+ * What the dashboard shows before it has watched anything.
+ *
+ * Every panel here is evidence-driven, so on a fresh project they are all
+ * correctly empty — and a screen of empty panels reads as "this software does
+ * nothing" rather than "this software has not been given anything yet". The
+ * first run is the moment the tool is judged, and it was the moment with the
+ * least information on screen.
+ *
+ * Deliberately not styled as a warning. Nothing is wrong; the work simply has
+ * not happened yet.
+ */
+export function FirstRun({
+  projectName,
+  hasTerminal,
+  scanned,
+}: {
+  projectName: string;
+  /** The embedded terminal exists only in the desktop application. */
+  hasTerminal: boolean;
+  /** Whether a scan has produced findings, which needs no agent session. */
+  scanned: boolean;
+}) {
+  return (
+    <section className="card animate-rise border-l-4 border-l-cecc px-6 py-5">
+      <p className="text-[11px] uppercase tracking-wider text-ink-faint">{projectName}</p>
+      <h1 className="mt-1 text-xl font-semibold">Nothing has been watched here yet</h1>
+      <p className="mt-2 max-w-2xl text-sm text-ink-muted">
+        CECC reports what it actually saw. It has not seen a coding session in this project, so the panels below are
+        empty — that is an absence of evidence, not a clean bill of health.
+      </p>
+
+      <ol className="mt-5 space-y-3">
+        <Step
+          n={1}
+          done={scanned}
+          title="Scan the code as it stands"
+          body="Runs the detection rules over every tracked file. No agent session needed — this works right now."
+        />
+        <Step
+          n={2}
+          done={false}
+          title={hasTerminal ? 'Open the Claude Code tab and work normally' : 'Run Claude Code in this project'}
+          body={
+            hasTerminal
+              ? 'A session started there runs inside this project with its hooks registered, so everything it does lands on these pages as it happens.'
+              : 'Hooks are registered in .claude/settings.json. Any session you start in this folder is recorded; a session started elsewhere is not.'
+          }
+        />
+        <Step
+          n={3}
+          done={false}
+          title="Come back and read what it did"
+          body="Live activity shows it as it happens. History replays a finished session step by step. What needs fixing collects the problems worth acting on."
+        />
+      </ol>
+
+      <p className="mt-5 text-xs text-ink-faint">
+        The scan is the ordinary half — plenty of tools do that. Watching the session is the half that catches a test
+        being weakened until it passes.
+      </p>
+    </section>
+  );
+}
+
+function Step({ n, done, title, body }: { n: number; done: boolean; title: string; body: string }) {
+  return (
+    <li className="flex gap-3">
+      <span
+        aria-hidden
+        className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold ${
+          done ? 'border-ok/40 bg-ok/10 text-ok' : 'border-surface-border text-ink-faint'
+        }`}
+      >
+        {done ? '✓' : n}
+      </span>
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-ink">{title}</p>
+        <p className="mt-0.5 text-[13px] leading-relaxed text-ink-muted">{body}</p>
+      </div>
+    </li>
+  );
+}
+
 export function StatusHero({
   ready,
   criticalCount,

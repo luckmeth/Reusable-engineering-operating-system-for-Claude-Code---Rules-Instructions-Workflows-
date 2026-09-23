@@ -7,7 +7,8 @@ import { getOverview, NotInitializedError, resolveRoot } from '@/lib/server';
 import { runScanAction } from './actions';
 import { clockTime, relativeTime } from '@/lib/format';
 import { GATE_PLAIN, plainFor } from '@/lib/plain';
-import { PlainSummary, StatusHero } from './Hero';
+import { FirstRun, PlainSummary, StatusHero } from './Hero';
+import { desktopShell } from '@/lib/desktop';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +28,7 @@ export default function OverviewPage() {
     throw err;
   }
 
-  const { project, session, run, findings, events, tests, readiness, eventCount, chain, triage } = data;
+  const { project, session, run, findings, events, tests, readiness, eventCount, chain, triage, agentObserved } = data;
 
   const critical = findings.filter((f) => f.severity === 'critical');
   const high = findings.filter((f) => f.severity === 'high');
@@ -35,16 +36,30 @@ export default function OverviewPage() {
   const topFindings = findings.slice(0, 5);
   const currentIndex = run ? WORKFLOW_STAGES.indexOf(run.currentStage) : -1;
 
+  // Scanning is not watching. `cecc scan` writes its own events and opens a
+  // session row, so neither an event count nor a session tells you whether an
+  // agent was ever observed here — and presenting a readiness verdict built on
+  // no agent evidence is the one claim this tool must never make.
+  const neverWatched = !agentObserved;
+
   return (
     <div className="space-y-6">
-      <StatusHero
-        ready={readiness.ready}
-        criticalCount={critical.length}
-        highCount={high.length}
-        blockerCount={blockingGates.length}
-        projectName={project.name}
-        environment={project.environment}
-      />
+      {neverWatched ? (
+        <FirstRun
+          projectName={project.name}
+          hasTerminal={desktopShell().terminal !== null}
+          scanned={findings.length > 0}
+        />
+      ) : (
+        <StatusHero
+          ready={readiness.ready}
+          criticalCount={critical.length}
+          highCount={high.length}
+          blockerCount={blockingGates.length}
+          projectName={project.name}
+          environment={project.environment}
+        />
+      )}
 
       <PlainSummary
         criticalCount={critical.length}

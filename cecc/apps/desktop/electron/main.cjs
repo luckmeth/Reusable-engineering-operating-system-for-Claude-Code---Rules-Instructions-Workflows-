@@ -18,6 +18,7 @@ const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs'
 const http = require('node:http');
 const net = require('node:net');
 const { join, resolve, sep } = require('node:path');
+const { TerminalHost } = require('./terminal.cjs');
 
 // Staged resources live beside the Electron entry point in both layouts. In a
 // packaged build they are unpacked out of the asar archive, because a child
@@ -38,6 +39,28 @@ let serverProcess = null;
 let mainWindow = null;
 let serverPort = 0;
 let quitting = false;
+/** The embedded Claude Code terminal, or null if its backend failed to load. */
+let terminal = null;
+
+/**
+ * Paths the dashboard can ask the main process to act on.
+ *
+ * The renderer is sandboxed with no preload bridge, so it cannot call in. A
+ * navigation to one of these is intercepted below and never actually loaded,
+ * which gives the page a way to raise a native dialog without exposing an API
+ * surface. The set is fixed and every entry opens something the user must then
+ * act on themselves — a page cannot make a silent change this way.
+ */
+const CONTROL_PREFIX = '/__cecc/';
+
+/**
+ * The page the window opens on.
+ *
+ * The control panel carries the terminal, the live feed and every standing
+ * number, so it is the page that answers "what is happening" without a click.
+ * The per-topic pages stay in the nav for the detail behind each panel.
+ */
+const LANDING = '/control';
 
 // ---------------------------------------------------------------- app state
 
@@ -134,18 +157,38 @@ async function startServer(projectRoot) {
       // on the dashboard because there is no network path to it.
       ...(projectRoot ? { CECC_PROJECT_ROOT: projectRoot } : {}),
       CECC_CLI_PATH: CLI_ENTRY,
+      // Lets the dashboard offer things that only exist in the desktop shell —
+      // the project picker and the embedded terminal — and hide them in a
+      // plain browser, where they would be dead links.
+      CECC_DESKTOP: '1',
+      ...(terminal ? { CECC_TERMINAL_PORT: String(terminal.port), CECC_TERMINAL_TOKEN: terminal.token } : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  serverProcess.stdout.on('data', (chunk) => process.stdout.write(`[dashboard] ${chunk}`));
-  serverProcess.stderr.on('data', (chunk) => process.stderr.write(`[dashboard] ${chunk}`));
+  const child = serverProcess;
+  child.stdout.on('data', (chunk) => process.stdout.write(`[dashboard] ${chunk}`));
+  child.stderr.on('data', (chunk) => process.stderr.write(`[dashboard] ${chunk}`));
 
-  serverProcess.on('exit', (code) => {
-    serverProcess = null;
-    if (quitting || code === 0) return;
-    // A dead server means an empty window. Say so rather than showing nothing.
-    dialog.showErrorBox('CECC stopped', `The dashboard process exited with code ${code}.`);
+  child.on('exit', (code, signal) => {
+    if (serverProcess === child) serverProcess = null;
+    // Opening a project restarts this process on purpose. On Windows that
+    // arrives as exit code null, which the previous check read as a crash, so
+    // switching project always raised "CECC stopped". Worse, showErrorBox
+    // blocks the main process: the window sat on the page it was leaving until
+    // the dialog was dismissed, which looked like the app had hung.
+    if (quitting || child.ceccExpectedExit || code === 0) return;
+
+    const options = {
+      type: 'error',
+      title: 'CECC stopped',
+      message: 'The dashboard stopped unexpectedly.',
+      detail: signal
+        ? `The process was terminated by ${signal}. Use File → Open project… to start it again.`
+        : `The process exited with code ${code}. Use File → Open project… to start it again.`,
+      buttons: ['OK'],
+    };
+    void (mainWindow ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options));
   });
 
   await waitForServer(serverPort);
@@ -156,6 +199,8 @@ function stopServer() {
   if (!serverProcess) return;
   const child = serverProcess;
   serverProcess = null;
+  // Tells the exit handler above that what follows is intentional.
+  child.ceccExpectedExit = true;
   try {
     child.kill('SIGTERM');
     // SIGTERM first, then insist. A stranded server would hold the port and
@@ -180,10 +225,30 @@ function createWindow() {
     height: 940,
     minWidth: 960,
     minHeight: 640,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b0d12' : '#f7f8fa',
+    backgroundColor: '#0b0d10',
     title: 'CECC — Engineering Control Center',
     show: false,
     icon: join(RESOURCES, 'icon.png'),
+    // The window frame is ours to draw, but the buttons are not.
+    //
+    // `titleBarOverlay` keeps the real minimise, maximise and close controls —
+    // drawn by the OS, positioned over the page — while the rest of the bar
+    // becomes application surface. Redrawing those three buttons in HTML is
+    // how an application ends up with a close button that behaves almost like
+    // the real one, and it costs the snap layouts Windows attaches to them.
+    //
+    // macOS keeps its traffic lights through `hiddenInset`; the overlay API is
+    // Windows and Linux only.
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 16, y: 14 } }
+      : {
+          titleBarOverlay: {
+            color: '#0b0d10',
+            symbolColor: '#9aa3af',
+            height: 44,
+          },
+        }),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -206,6 +271,12 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
+    const action = controlAction(url);
+    if (action) {
+      event.preventDefault();
+      runControlAction(action);
+      return;
+    }
     if (!url.startsWith(`http://127.0.0.1:${serverPort}`)) {
       event.preventDefault();
       if (/^https:/.test(url)) void shell.openExternal(url);
@@ -217,6 +288,26 @@ function createWindow() {
   });
 
   return mainWindow;
+}
+
+/** The control name in a `/__cecc/<name>` navigation, or null. */
+function controlAction(url) {
+  if (!serverPort) return null;
+  const prefix = `http://127.0.0.1:${serverPort}${CONTROL_PREFIX}`;
+  if (!url.startsWith(prefix)) return null;
+  return url.slice(prefix.length).split(/[?#]/)[0];
+}
+
+/** An allowlist, not a dispatcher: an unknown name does nothing at all. */
+function runControlAction(action) {
+  if (action === 'open-project') {
+    void pickProject();
+    return;
+  }
+  if (action === 'reveal') {
+    const root = currentProject();
+    if (root) void shell.openPath(root);
+  }
 }
 
 function loadSplash(message) {
@@ -265,7 +356,9 @@ async function openProject(root) {
   stopServer();
   try {
     const port = await startServer(root);
-    await mainWindow?.loadURL(`http://127.0.0.1:${port}/`);
+    terminal?.setAllowedOrigin(`http://127.0.0.1:${port}`);
+    terminal?.setProjectRoot(root);
+    await mainWindow?.loadURL(`http://127.0.0.1:${port}${LANDING}`);
   } catch (err) {
     showError('The dashboard could not start.', err && err.message);
   }
@@ -319,6 +412,20 @@ function buildMenu() {
       label: 'File',
       submenu: [
         { label: 'Open project…', accelerator: 'CmdOrCtrl+O', click: () => void pickProject() },
+        {
+          label: 'Control panel',
+          accelerator: 'CmdOrCtrl+1',
+          click: () => {
+            if (serverPort) void mainWindow?.loadURL(`http://127.0.0.1:${serverPort}${LANDING}`);
+          },
+        },
+        {
+          label: 'Claude Code terminal',
+          accelerator: 'CmdOrCtrl+T',
+          click: () => {
+            if (serverPort) void mainWindow?.loadURL(`http://127.0.0.1:${serverPort}/terminal`);
+          },
+        },
         {
           label: 'Reveal project folder',
           click: () => {
@@ -395,10 +502,23 @@ if (!app.requestSingleInstanceLock()) {
     createWindow();
     loadSplash('Starting the dashboard…');
 
+    // Started before the dashboard so its port and token can be handed to
+    // the server as environment. A failure here costs the terminal tab and
+    // nothing else — the dashboard is the product.
+    try {
+      terminal = new TerminalHost(RESOURCES);
+      await terminal.start();
+    } catch (err) {
+      console.error('[terminal] backend unavailable:', err && err.message);
+      terminal = null;
+    }
+
     const root = currentProject();
     try {
       const port = await startServer(root);
-      await mainWindow?.loadURL(`http://127.0.0.1:${port}/`);
+      terminal?.setAllowedOrigin(`http://127.0.0.1:${port}`);
+      terminal?.setProjectRoot(root);
+      await mainWindow?.loadURL(`http://127.0.0.1:${port}${LANDING}`);
       if (!root) {
         // No project yet: the dashboard renders its own "not initialized"
         // screen, and the picker is one menu item away.
@@ -415,10 +535,12 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     quitting = true;
+    terminal?.stop();
     stopServer();
   });
 
   app.on('window-all-closed', () => {
+    terminal?.stop();
     stopServer();
     if (process.platform !== 'darwin') app.quit();
   });

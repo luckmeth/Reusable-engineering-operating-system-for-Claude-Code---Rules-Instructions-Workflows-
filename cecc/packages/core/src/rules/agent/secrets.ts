@@ -1,4 +1,4 @@
-import { isClientReachable, isTestFile, searchableText } from '../../analyze/content.js';
+import { isClientReachable, isCommentLine, isDocumentationFile, isTestFile, searchableText } from '../../analyze/content.js';
 import { detectSecrets, isSupabaseServiceRoleJwt, maskValue } from '../../secrets.js';
 import { lineEvidence, type Rule, type RuleResult } from '../types.js';
 import { registerRules } from '../registry.js';
@@ -128,13 +128,21 @@ const AGENT_007: Rule = {
       const clientReachable = isClientReachable(change.file, content);
 
       // Signal 1: a privileged name behind a public env prefix. Dangerous in any
-      // file, because the prefix itself is what publishes it.
+      // file that ships, because the prefix itself is what publishes it.
+      //
+      // Documentation and comments are excluded. This signal is name-based, and
+      // a name written down is not an exposure — `.env.example` and a README
+      // are *supposed* to name variables, and explaining a vulnerability you
+      // just fixed should not re-raise it. A real value pasted in either place
+      // is still caught, by the value-based rule rather than this one.
       for (const line of change.added) {
+        if (isCommentLine(line.text)) continue;
         PUBLIC_ENV_PREFIX.lastIndex = 0;
         let match: RegExpExecArray | null;
         while ((match = PUBLIC_ENV_PREFIX.exec(line.text)) !== null) {
           const name = match[1] ?? '';
           if (!PRIVILEGED_NAME.test(name)) continue;
+          if (isDocumentationFile(change.file)) continue;
           results.push({
             title: `Privileged credential behind a public env prefix: ${match[0]}`,
             severity: 'critical',

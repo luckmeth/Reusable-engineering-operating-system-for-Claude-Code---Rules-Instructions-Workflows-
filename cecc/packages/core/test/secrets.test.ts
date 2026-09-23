@@ -90,3 +90,47 @@ describe('redaction', () => {
     expect(isSupabaseServiceRoleJwt('')).toBe(false);
   });
 });
+
+/**
+ * Regression cover for the documentation false positive.
+ *
+ * A README showing `postgresql://USER:PASSWORD@HOST/db` was reported as a
+ * leaked privileged credential at CRITICAL, 94% confidence. The captured value
+ * is the password segment alone — `PASSWORD` — which the anchored placeholder
+ * check did not recognise.
+ *
+ * The second half of this block matters more than the first: suppressing too
+ * much is how a scanner goes quiet on a real leak, so every case below pairs
+ * the placeholder with a credential of the same shape that must still fire.
+ */
+describe('placeholders in documentation', () => {
+  const passwordsIn = (text: string) =>
+    detectSecrets(text)
+      .filter((m) => m.kind === 'connection_string_password')
+      .map((m) => m.value);
+
+  it('ignores the connection string every README shows', () => {
+    expect(passwordsIn('postgresql://USER:PASSWORD@HOST/neondb?sslmode=require')).toEqual([]);
+    expect(passwordsIn('postgres://user:password@localhost:5432/db')).toEqual([]);
+    expect(passwordsIn('mongodb+srv://USERNAME:YOUR_PASSWORD@cluster0.mongodb.net')).toEqual([]);
+    expect(passwordsIn('mysql://root:<your-password>@127.0.0.1/app')).toEqual([]);
+    expect(passwordsIn('redis://user:[password]@redis:6379')).toEqual([]);
+  });
+
+  it('still reports a connection string carrying a real password', () => {
+    expect(passwordsIn('postgresql://app:hunter2Xk9qLm@db.internal/prod')).toEqual(['hunter2Xk9qLm']);
+    expect(passwordsIn('postgres://svc:aB3%40kL9zQw1@10.0.0.4:5432/main')).toEqual(['aB3%40kL9zQw1']);
+  });
+
+  it('ignores env-variable names given as values', () => {
+    expect(detectSecrets('api_key = "YOUR_API_KEY_HERE"')).toEqual([]);
+    expect(detectSecrets('password: "DB_PASSWORD"')).toEqual([]);
+    expect(detectSecrets('secret = "replace-with-your-secret"')).toEqual([]);
+  });
+
+  it('does not suppress an all-caps value that is actually a key', () => {
+    // No underscore, so it is not variable-name shaped and must still fire.
+    const found = detectSecrets('api_key = "AB12CD34EF56GH78IJ90"');
+    expect(found.map((m) => m.value)).toEqual(['AB12CD34EF56GH78IJ90']);
+  });
+});

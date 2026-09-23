@@ -116,13 +116,58 @@ function readToolResponse(response: unknown): { output: string; exitCode: number
   return { output: parts.join('\n').slice(0, 200_000), exitCode, failed };
 }
 
+/**
+ * How much text a tool response put into the context window.
+ *
+ * `readToolResponse` scans a fixed set of top-level keys because it is after
+ * stdout and an exit code. The Read tool nests what matters one level down, in
+ * `file.content`, so that function reported zero bytes for the single largest
+ * consumer of context there is.
+ *
+ * The final fallback measures the serialized response. It over-counts by the
+ * JSON punctuation, which is the right direction to be wrong in: an estimate
+ * that silently reads zero is worse than one that is slightly high, because
+ * zero looks like thrift.
+ */
+function responseContentLength(response: unknown): number {
+  if (response == null) return 0;
+  if (typeof response === 'string') return response.length;
+  if (typeof response !== 'object') return String(response).length;
+
+  const record = response as Record<string, unknown>;
+
+  const file = record['file'];
+  if (file && typeof file === 'object') {
+    const content = (file as Record<string, unknown>)['content'];
+    if (typeof content === 'string') return content.length;
+  }
+
+  for (const key of ['content', 'output', 'stdout', 'result', 'text']) {
+    const value = record[key];
+    if (typeof value === 'string' && value) return value.length;
+  }
+
+  try {
+    return JSON.stringify(response).length;
+  } catch {
+    return 0;
+  }
+}
+
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly id = 'claude-code';
   readonly displayName = 'Claude Code';
 
   async detectVersion(): Promise<string | null> {
     try {
-      const { stdout } = await exec('claude', ['--version'], { timeout: 5000 });
+      // On Windows the npm-installed `claude` is a .cmd shim, which
+      // CreateProcess cannot execute directly. Both the command and its
+      // arguments are fixed literals, so going through the shell here adds no
+      // injection surface.
+      const { stdout } = await exec('claude', ['--version'], {
+        timeout: 5000,
+        shell: process.platform === 'win32',
+      });
       // Output looks like "2.1.278 (Claude Code)" — take the version token.
       const version = /(\d+\.\d+\.\d+)/.exec(stdout)?.[1];
       return version ?? (stdout.trim() || null);
@@ -438,7 +483,10 @@ export class ClaudeCodeAdapter implements AgentAdapter {
           tool,
           filePaths: [filePath],
           evidence: [],
-          metadata: { hookEvent },
+          // The size of what was read is only knowable on PostToolUse, and it
+          // is what makes context accounting possible at all: reads are the
+          // largest consumer and were previously the one unmeasured kind.
+          metadata: isPost ? { hookEvent, bytes: responseContentLength(data.tool_response) } : { hookEvent },
         });
         break;
 

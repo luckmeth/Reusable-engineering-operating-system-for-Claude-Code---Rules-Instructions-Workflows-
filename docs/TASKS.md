@@ -26,6 +26,9 @@ _Discovered out of scope. Do not silently expand a task to include these._
 - [ ] Replace `offset` pagination on `/api/invoices` with keyset (slow past ~10k rows)
 - [ ] `customers.email` should be `unique (tenant_id, lower(email))`
 - [ ] Audit log for admin actions
+- [ ] cecc: `npm run lint` is a dead script — eslint is neither installed nor configured, and CI never calls it
+- [ ] cecc: node-pty publishes no linux prebuild, so a Linux desktop build needs a compiler; decide between vendoring one and documenting the toolchain
+- [ ] cecc: `.claude/settings.json` is committed but holds machine-specific absolute hook paths, so it does not survive a clone
 
 ## Done
 
